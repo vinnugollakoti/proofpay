@@ -18,7 +18,7 @@ export class AuditController {
       });
     }
 
-    const timeline = AuditService.getJobTimeline(jobId);
+    const timeline = await AuditService.getJobTimeline(jobId);
     logger.payment(`Audit timeline retrieved for "${job.title}" (${timeline.length} events logged)`);
 
     return res.json({

@@ -7,6 +7,7 @@ import { PrivyService } from '../services/privy.service.js';
 import { ArcService } from '../services/arc.service.js';
 import { AuditService } from '../services/audit.service.js';
 import { PaymentIntent } from '../types/index.js';
+import { getPrisma } from '../db/prisma.js';
 import { logger } from '../utils/logger.js';
 
 export class PaymentsController {
@@ -297,6 +298,19 @@ export class PaymentsController {
       intent.status = 'EXECUTED';
       job.status = 'COMPLETED';
       job.updatedAt = new Date().toISOString();
+
+      const prisma = getPrisma();
+      if (prisma) {
+        try {
+          await prisma.job.update({
+            where: { id: job.id },
+            data: { status: 'COMPLETED', updatedAt: new Date() },
+          });
+          logger.db(`Job ${job.id} marked COMPLETED in Supabase`);
+        } catch (err: any) {
+          logger.dbError(`Failed to update job status to COMPLETED in Supabase: ${err.message}`);
+        }
+      }
 
       AuditService.recordEvent(
         job.id,

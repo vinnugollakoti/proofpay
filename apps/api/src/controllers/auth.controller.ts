@@ -1,36 +1,162 @@
 import { Request, Response } from 'express';
 import { db } from '../db/store.js';
+import { getPrisma } from '../db/prisma.js';
 import { logger } from '../utils/logger.js';
 
 export class AuthController {
-  static async getSession(req: Request, res: Response) {
-    const role = (req.query.role as string) || 'CLIENT';
-    logger.privy(`GET /api/auth/session — querying user session for role: "${role}"`);
+  /**
+   * Dedicated authentication login endpoint for Client and Freelancer logins.
+   * Authenticates against Supabase PostgreSQL database.
+   */
+  static async login(req: Request, res: Response) {
+    const { email, password, role } = req.body;
+    logger.privy(`POST /api/auth/login — attempt for email: "${email}", requested role: "${role}"`);
 
-    const user = Array.from(db.users.values()).find((u) => u.role === role);
-    if (!user) {
-      const errorMsg = `User with role "${role}" not found in session registry`;
-      logger.privyError(errorMsg, { availableRoles: Array.from(db.users.values()).map((u) => u.role) });
-      return res.status(404).json({
-        error: errorMsg,
-        code: 'USER_NOT_FOUND',
-      });
+    if (!email || !password) {
+      const errorMsg = 'Email and password are required for login';
+      logger.privyError(errorMsg);
+      return res.status(400).json({ error: errorMsg, code: 'MISSING_CREDENTIALS' });
     }
 
-    const org = user.organizationId ? db.organizations.get(user.organizationId) : undefined;
-    logger.privy(`Session resolved for user "${user.privyUserId}" (${user.walletAddress}) — Org: ${org?.name || 'Individual'}`);
+    const prisma = getPrisma();
+    let user: any = null;
+    let organization: any = null;
 
-    return res.json({ user, organization: org });
+    if (prisma) {
+      try {
+        user = await prisma.user.findFirst({
+          where: {
+            email: email.toLowerCase().trim(),
+          },
+          include: {
+            organization: true,
+          },
+        });
+      } catch (err: any) {
+        logger.dbError(`Failed to query user from Supabase: ${err.message}`);
+      }
+    }
+
+    // Fallback to store if db unavailable
+    if (!user) {
+      user = Array.from(db.users.values()).find(
+        (u) => u.email?.toLowerCase() === email.toLowerCase().trim()
+      );
+      if (user && user.organizationId) {
+        organization = db.organizations.get(user.organizationId);
+      }
+    } else {
+      organization = user.organization;
+    }
+
+    if (!user) {
+      const errorMsg = `No account found with email "${email}". Please verify credentials.`;
+      logger.privyError(errorMsg);
+      return res.status(401).json({ error: errorMsg, code: 'INVALID_CREDENTIALS' });
+    }
+
+    if (user.password && user.password !== password) {
+      const errorMsg = `Invalid password for "${email}".`;
+      logger.privyError(errorMsg);
+      return res.status(401).json({ error: errorMsg, code: 'INVALID_CREDENTIALS' });
+    }
+
+    // If role requested, verify user has permission for that portal
+    if (role && user.role !== role) {
+      const errorMsg = `Access denied: Account "${email}" has role "${user.role}" and cannot access the ${role} portal.`;
+      logger.privyError(errorMsg);
+      return res.status(403).json({ error: errorMsg, code: 'ROLE_MISMATCH' });
+    }
+
+    logger.privy(`✅ Login successful for ${user.role}: "${user.name || user.email}"`);
+
+    return res.json({
+      success: true,
+      user: {
+        id: user.id,
+        name: user.name || (user.role === 'CLIENT' ? 'Alice (ACME Design)' : 'Bob (Senior Engineer)'),
+        email: user.email,
+        role: user.role,
+        walletAddress: user.walletAddress,
+        privyUserId: user.privyUserId,
+        organizationId: user.organizationId,
+      },
+      organization: organization
+        ? {
+            id: organization.id,
+            name: organization.name,
+            privyOrgId: organization.privyOrgId,
+            walletAddress: organization.walletAddress,
+            maxReleaseLimitUsdc: Number(organization.maxReleaseLimitUsdc || 5000),
+          }
+        : undefined,
+    });
+  }
+
+  static async getSession(req: Request, res: Response) {
+    const role = (req.query.role as string) || 'CLIENT';
+    const email = req.query.email as string;
+    logger.privy(`GET /api/auth/session — querying user session (role: "${role}", email: "${email || 'any'}")`);
+
+    const prisma = getPrisma();
+    let user: any = null;
+
+    if (prisma) {
+      try {
+        user = await prisma.user.findFirst({
+          where: email ? { email: email.toLowerCase().trim() } : { role },
+          include: { organization: true },
+        });
+      } catch (err: any) {
+        logger.dbError(`Failed to fetch session from Supabase: ${err.message}`);
+      }
+    }
+
+    if (!user) {
+      user = Array.from(db.users.values()).find((u) => (email ? u.email === email : u.role === role));
+    }
+
+    if (!user) {
+      const errorMsg = `User with role "${role}" not found in session registry`;
+      logger.privyError(errorMsg);
+      return res.status(404).json({ error: errorMsg, code: 'USER_NOT_FOUND' });
+    }
+
+    const org = user.organization || (user.organizationId ? db.organizations.get(user.organizationId) : undefined);
+
+    return res.json({
+      user: {
+        id: user.id,
+        name: user.name || (user.role === 'CLIENT' ? 'Alice (ACME Design)' : 'Bob (Senior Engineer)'),
+        email: user.email,
+        role: user.role,
+        walletAddress: user.walletAddress,
+        privyUserId: user.privyUserId,
+        organizationId: user.organizationId,
+      },
+      organization: org,
+    });
   }
 
   static async listUsers(req: Request, res: Response) {
-    const users = Array.from(db.users.values());
-    const organizations = Array.from(db.organizations.values());
-    logger.privy(`GET /api/auth/users — returning ${users.length} user(s) and ${organizations.length} organization(s)`);
+    const prisma = getPrisma();
+    let users: any[] = [];
+    let organizations: any[] = [];
 
-    return res.json({
-      users,
-      organizations,
-    });
+    if (prisma) {
+      try {
+        users = await prisma.user.findMany({ select: { id: true, name: true, email: true, role: true, walletAddress: true } });
+        organizations = await prisma.organization.findMany();
+      } catch (err: any) {
+        logger.dbError(`Failed to list users from Supabase: ${err.message}`);
+      }
+    }
+
+    if (users.length === 0) {
+      users = Array.from(db.users.values());
+      organizations = Array.from(db.organizations.values());
+    }
+
+    return res.json({ users, organizations });
   }
 }

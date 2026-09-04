@@ -52,41 +52,62 @@ export const logger = {
 
   world: (message: string, data?: any) => {
     const time = `${colors.dim}${formatTimestamp()}${colors.reset}`;
-    console.log(`${time} 🌐 [WORLD] ${colors.cyan}${message}${colors.reset}`, data !== undefined ? data : '');
+    console.log(`\n${colors.cyan}┌─────────────────────────────────────────────────────────────┐${colors.reset}`);
+    console.log(`${time} 🌐 ${colors.bold}[WORLD ID 3.0 / v4]${colors.reset} ${colors.cyan}${message}${colors.reset}`);
+    if (data !== undefined) {
+      console.log(`   ${colors.dim}Data:${colors.reset}`, typeof data === 'object' ? JSON.stringify(data, null, 2) : data);
+    }
+    console.log(`${colors.cyan}└─────────────────────────────────────────────────────────────┘${colors.reset}\n`);
   },
 
   worldError: (message: string, error?: any) => {
     const time = `${colors.dim}${formatTimestamp()}${colors.reset}`;
-    console.error(
-      `${time} 🔴 [WORLD ERROR] ${colors.red}${message}${colors.reset}`,
-      error !== undefined ? error : ''
-    );
+    console.error(`\n${colors.red}┌─────────────────────────────────────────────────────────────┐${colors.reset}`);
+    console.error(`${time} 🔴 ${colors.bold}[WORLD ID ERROR]${colors.reset} ${colors.red}${message}${colors.reset}`);
+    if (error !== undefined) {
+      console.error(`   ${colors.dim}Error Detail:${colors.reset}`, typeof error === 'object' ? JSON.stringify(error, null, 2) : error);
+    }
+    console.error(`${colors.red}└─────────────────────────────────────────────────────────────┘${colors.reset}\n`);
   },
 
   privy: (message: string, data?: any) => {
     const time = `${colors.dim}${formatTimestamp()}${colors.reset}`;
-    console.log(`${time} 🔑 [PRIVY] ${colors.magenta}${message}${colors.reset}`, data !== undefined ? data : '');
+    console.log(`\n${colors.magenta}┌─────────────────────────────────────────────────────────────┐${colors.reset}`);
+    console.log(`${time} 🔑 ${colors.bold}[PRIVY POLICY ENGINE]${colors.reset} ${colors.magenta}${message}${colors.reset}`);
+    if (data !== undefined) {
+      console.log(`   ${colors.dim}Policy Evaluation:${colors.reset}`, typeof data === 'object' ? JSON.stringify(data, null, 2) : data);
+    }
+    console.log(`${colors.magenta}└─────────────────────────────────────────────────────────────┘${colors.reset}\n`);
   },
 
   privyError: (message: string, error?: any) => {
     const time = `${colors.dim}${formatTimestamp()}${colors.reset}`;
-    console.error(
-      `${time} 🔴 [PRIVY ERROR] ${colors.red}${message}${colors.reset}`,
-      error !== undefined ? error : ''
-    );
+    console.error(`\n${colors.red}┌─────────────────────────────────────────────────────────────┐${colors.reset}`);
+    console.error(`${time} 🔴 ${colors.bold}[PRIVY POLICY VIOLATION]${colors.reset} ${colors.red}${message}${colors.reset}`);
+    if (error !== undefined) {
+      console.error(`   ${colors.dim}Violation Details:${colors.reset}`, typeof error === 'object' ? JSON.stringify(error, null, 2) : error);
+    }
+    console.error(`${colors.red}└─────────────────────────────────────────────────────────────┘${colors.reset}\n`);
   },
 
   arc: (message: string, data?: any) => {
     const time = `${colors.dim}${formatTimestamp()}${colors.reset}`;
-    console.log(`${time} ⛓️  [ARC] ${colors.cyan}${message}${colors.reset}`, data !== undefined ? data : '');
+    console.log(`\n${colors.cyan}┌─────────────────────────────────────────────────────────────┐${colors.reset}`);
+    console.log(`${time} ⛓️  ${colors.bold}[ARC SETTLEMENT (5042002)]${colors.reset} ${colors.cyan}${message}${colors.reset}`);
+    if (data !== undefined) {
+      console.log(`   ${colors.dim}Arc Execution:${colors.reset}`, typeof data === 'object' ? JSON.stringify(data, null, 2) : data);
+    }
+    console.log(`${colors.cyan}└─────────────────────────────────────────────────────────────┘${colors.reset}\n`);
   },
 
   arcError: (message: string, error?: any) => {
     const time = `${colors.dim}${formatTimestamp()}${colors.reset}`;
-    console.error(
-      `${time} 🔴 [ARC ERROR] ${colors.red}${message}${colors.reset}`,
-      error !== undefined ? error : ''
-    );
+    console.error(`\n${colors.red}┌─────────────────────────────────────────────────────────────┐${colors.reset}`);
+    console.error(`${time} 🔴 ${colors.bold}[ARC EXECUTION ERROR]${colors.reset} ${colors.red}${message}${colors.reset}`);
+    if (error !== undefined) {
+      console.error(`   ${colors.dim}Error Details:${colors.reset}`, typeof error === 'object' ? JSON.stringify(error, null, 2) : error);
+    }
+    console.error(`${colors.red}└─────────────────────────────────────────────────────────────┘${colors.reset}\n`);
   },
 
   payment: (message: string, data?: any) => {

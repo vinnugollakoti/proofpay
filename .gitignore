@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Environment files and keys
+.env
+.env.local
+*.pem
+signing-key*.json
+
+# Build outputs
+dist/
+out/
+cache/
+
+# IDE & OS
+.DS_Store
+.vscode/
+.idea/

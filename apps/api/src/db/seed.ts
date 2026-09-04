@@ -107,8 +107,8 @@ async function seed() {
   const job2 = await prisma.job.upsert({
     where: { id: 'job-demo-smart-contracts' },
     update: {
-      title: 'ProofPayEscrow Foundry Test Suite',
-      description: 'Formal verification and comprehensive test coverage for Arc Testnet escrow contract.',
+      title: 'Next.js Frontend & API Integration',
+      description: 'Implement responsive World.org minimalist UI and Privy authentication integration.',
       clientId: clientUser.id,
       organizationId: org.id,
       freelancerId: freelancerUser.id,
@@ -119,8 +119,8 @@ async function seed() {
     },
     create: {
       id: 'job-demo-smart-contracts',
-      title: 'ProofPayEscrow Foundry Test Suite',
-      description: 'Formal verification and comprehensive test coverage for Arc Testnet escrow contract.',
+      title: 'Next.js Frontend & API Integration',
+      description: 'Implement responsive World.org minimalist UI and Privy authentication integration.',
       clientId: clientUser.id,
       organizationId: org.id,
       freelancerId: freelancerUser.id,
@@ -148,7 +148,7 @@ async function seed() {
         eventType: 'ESCROW_FUNDED',
         actorAddress: clientUser.walletAddress,
         actorRole: 'CLIENT',
-        metadata: { amountUsdc: 500, chain: 'Arc Testnet (5042002)', txHash: '0xmockArcFundTxHash' },
+        metadata: { amountUsdc: 500, depositMethod: 'Authorized Escrow Deposit' },
         timestamp: new Date(Date.now() - 3600000 * 3),
       },
       {

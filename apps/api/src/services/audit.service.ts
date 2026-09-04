@@ -44,7 +44,26 @@ export class AuditService {
           },
         });
       } catch (err: any) {
-        logger.dbError(`Failed to persist audit event to Supabase: ${err.message}`);
+        if (paymentIntentId) {
+          try {
+            await prisma.auditEvent.create({
+              data: {
+                id: event.id,
+                jobId,
+                paymentIntentId: null,
+                eventType,
+                actorAddress,
+                actorRole,
+                metadata: { ...(metadata || {}), intentId: paymentIntentId },
+                timestamp: new Date(event.timestamp),
+              },
+            });
+          } catch (retryErr: any) {
+            logger.dbError(`Failed to persist audit event to Supabase: ${retryErr.message}`);
+          }
+        } else {
+          logger.dbError(`Failed to persist audit event to Supabase: ${err.message}`);
+        }
       }
     }
 

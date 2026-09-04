@@ -8,6 +8,8 @@ import { ArcService } from '../services/arc.service.js';
 import { AuditService } from '../services/audit.service.js';
 import { PaymentIntent } from '../types/index.js';
 import { getPrisma } from '../db/prisma.js';
+import { ethers } from 'ethers';
+import { config } from '../config.js';
 import { logger } from '../utils/logger.js';
 
 export class PaymentsController {
@@ -76,6 +78,29 @@ export class PaymentsController {
     };
 
     db.paymentIntents.set(intentId, paymentIntent);
+
+    const prisma = getPrisma();
+    if (prisma) {
+      try {
+        await prisma.paymentIntent.create({
+          data: {
+            id: intentId,
+            jobId: job.id,
+            clientId: job.clientId,
+            recipientAddress: recipient,
+            amountUsdc: amount,
+            riskLevel: riskDecision.riskLevel,
+            requiresHumanVerification: riskDecision.requiresHumanVerification,
+            signalHash,
+            status: 'PENDING',
+            expiresAt: new Date(expiresAt),
+          },
+        });
+        logger.db(`Payment intent ${intentId} persisted to Supabase`);
+      } catch (err: any) {
+        logger.dbError(`Failed to persist payment intent to Supabase: ${err.message}`);
+      }
+    }
 
     AuditService.recordEvent(
       job.id,
@@ -284,12 +309,12 @@ export class PaymentsController {
 
     logger.privy(`Privy organization policy passed`);
 
-    // 4. Arc Escrow Release Execution
-    logger.arc(`Executing releaseEscrow on Arc Testnet (Escrow: ${job.escrowId || 'mock'}, Amount: $${job.amountUsdc} USDC)`);
+    // 4. Protocol Escrow Release Execution
+    logger.arc(`Executing settlement release (Escrow: ${job.escrowId || job.id}, Amount: $${job.amountUsdc} USDC)`);
 
     try {
       const arcResult = await ArcService.executeReleaseEscrow(
-        job.escrowId || '0xmockEscrowId',
+        job.escrowId || `escrow_${job.id}`,
         job.freelancerPayoutAddress,
         job.amountUsdc,
         intent.signalHash
@@ -307,29 +332,35 @@ export class PaymentsController {
             data: { status: 'COMPLETED', updatedAt: new Date() },
           });
           logger.db(`Job ${job.id} marked COMPLETED in Supabase`);
+          await prisma.paymentIntent.update({
+            where: { id: intent.id },
+            data: { status: 'EXECUTED' },
+          });
         } catch (err: any) {
-          logger.dbError(`Failed to update job status to COMPLETED in Supabase: ${err.message}`);
+          logger.dbError(`Failed to update job/intent status to COMPLETED in Supabase: ${err.message}`);
         }
       }
 
       AuditService.recordEvent(
         job.id,
-        'ARC_ESCROW_RELEASED',
+        'ESCROW_RELEASED',
         {
-          txHash: arcResult.txHash,
-          explorerUrl: arcResult.explorerUrl,
+          settlementStatus: arcResult.status,
+          settlementMode: arcResult.mode,
           amountUsdc: job.amountUsdc,
           recipient: job.freelancerPayoutAddress,
-          chainId: 5042002,
+          txHash: arcResult.txHash || undefined,
+          explorerUrl: arcResult.explorerUrl || undefined,
         },
-        '0xRelayerArcTestnet',
-        'ARC',
+        'ProofPay Settlement Protocol',
+        'CLIENT',
         intent.id
       );
 
-      logger.payment(`SUCCESS: Payment released to ${job.freelancerPayoutAddress} on Arc Testnet`, {
-        txHash: arcResult.txHash,
-        explorerUrl: arcResult.explorerUrl,
+      logger.payment(`SUCCESS: Payment released to ${job.freelancerPayoutAddress}`, {
+        amountUsdc: job.amountUsdc,
+        status: arcResult.status,
+        mode: arcResult.mode,
       });
 
       return res.json({
@@ -340,19 +371,19 @@ export class PaymentsController {
       });
     } catch (err: any) {
       intent.status = 'BLOCKED';
-      logger.arcError(`Arc onchain release transaction failed: ${err.message}`, err.stack);
+      logger.arcError(`Release execution failed: ${err.message}`, err.stack);
 
       AuditService.recordEvent(
         job.id,
-        'ARC_RELEASE_FAILED',
+        'RELEASE_FAILED',
         { error: err.message },
         undefined,
-        'ARC',
+        'CLIENT',
         intent.id
       );
       return res.status(500).json({
-        error: `Arc settlement failed: ${err.message}`,
-        code: 'ARC_EXECUTION_FAILED',
+        error: `Settlement failed: ${err.message}`,
+        code: 'SETTLEMENT_EXECUTION_FAILED',
       });
     }
   }
@@ -364,5 +395,35 @@ export class PaymentsController {
       return res.status(404).json({ error: 'Payment intent not found' });
     }
     return res.json({ intent });
+  }
+
+  static async getVaultStatus(req: Request, res: Response) {
+    try {
+      const provider = new ethers.JsonRpcProvider(config.arc.rpcUrl);
+      const address = config.arc.relayerPrivateKey
+        ? new ethers.Wallet(config.arc.relayerPrivateKey).address
+        : '0x37Da1f17986e4DC6d4E8D86713791698F07c8099';
+
+      const ethBal = await provider.getBalance(address);
+      const erc20Abi = ['function balanceOf(address) view returns (uint256)'];
+      const usdc = new ethers.Contract(config.arc.usdcAddress, erc20Abi, provider);
+      const usdcBal = await usdc.balanceOf(address);
+
+      return res.json({
+        success: true,
+        chainId: config.arc.chainId,
+        escrowContractAddress: config.arc.escrowAddress,
+        vaultAddress: address,
+        gasBalance: ethers.formatEther(ethBal),
+        usdcBalance: ethers.formatUnits(usdcBal, 6),
+        explorerUrl: config.arc.explorerUrl,
+        privyOrgId: config.privy.orgId,
+        privyAppId: config.privy.appId,
+        status: 'ONLINE',
+      });
+    } catch (err: any) {
+      logger.arcError(`Failed to fetch vault status: ${err.message}`);
+      return res.status(500).json({ error: err.message });
+    }
   }
 }

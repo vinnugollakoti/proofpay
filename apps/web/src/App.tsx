@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Job, PaymentIntent } from './types/index.js';
+import { Job, PaymentIntent } from './types/index';
 import {
   fetchJobs,
   fundJob,
@@ -8,20 +8,47 @@ import {
   approveWork,
   createReleaseIntent,
   verifyAndRelease,
-} from './services/api.js';
-import { Navbar } from './components/Navbar.js';
-import { ClientDashboard } from './pages/ClientDashboard.js';
-import { FreelancerDashboard } from './pages/FreelancerDashboard.js';
-import { JobDetailsPage } from './pages/JobDetailsPage.js';
-import { CreateJobModal } from './pages/CreateJobModal.js';
-import { WorldSelfieModal } from './components/WorldSelfieModal.js';
-import { CheckCircle2, AlertOctagon, ExternalLink } from 'lucide-react';
+} from './services/api';
+import { Navbar } from './components/Navbar';
+import { LandingPage } from './pages/LandingPage';
+import { ClientDashboard } from './pages/ClientDashboard';
+import { FreelancerDashboard } from './pages/FreelancerDashboard';
+import { JobDetailsPage } from './pages/JobDetailsPage';
+import { CreateJobModal } from './pages/CreateJobModal';
+import { WorldSelfieModal } from './components/WorldSelfieModal';
+import { ReleaseSuccessModal } from './components/ReleaseSuccessModal';
+import { AuthModal } from './components/AuthModal';
+import { AlertCircle, CheckCircle2 } from 'lucide-react';
+import { usePrivy } from '@privy-io/react-auth';
 
 export function App() {
+  const { user: privyUser, authenticated: privyAuthenticated, logout: privyLogout } = usePrivy();
+  const [view, setView] = useState<'LANDING' | 'WORKSPACE'>('LANDING');
   const [role, setRole] = useState<'CLIENT' | 'FREELANCER'>('CLIENT');
+  const [currentUser, setCurrentUser] = useState<any | null>(() => {
+    try {
+      const saved = localStorage.getItem('proofpay_user');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
+  const [currentOrg, setCurrentOrg] = useState<any | null>(() => {
+    try {
+      const saved = localStorage.getItem('proofpay_org');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
+
   const [jobs, setJobs] = useState<Job[]>([]);
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+
+  // Authentication Modal State
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [authModalTargetRole, setAuthModalTargetRole] = useState<'CLIENT' | 'FREELANCER'>('CLIENT');
 
   // Release Intent & World ID State
   const [activeIntent, setActiveIntent] = useState<PaymentIntent | null>(null);
@@ -29,12 +56,13 @@ export function App() {
   const [isSelfieModalOpen, setIsSelfieModalOpen] = useState(false);
   const [pendingJob, setPendingJob] = useState<Job | null>(null);
 
-  // Status Alerts
+  // Modals & Alert State
   const [successResult, setSuccessResult] = useState<{
-    txHash: string;
-    explorerUrl: string;
+    txHash?: string;
+    explorerUrl?: string;
     jobTitle: string;
     amount: number;
+    recipientAddress: string;
   } | null>(null);
   const [errorAlert, setErrorAlert] = useState<string | null>(null);
 
@@ -43,19 +71,94 @@ export function App() {
       const data = await fetchJobs();
       setJobs(data.jobs || []);
     } catch (err: any) {
-      console.error('Failed to load jobs:', err);
+      console.error('Failed to load jobs from Supabase:', err);
     }
   };
 
   useEffect(() => {
     loadJobs();
+    if (currentUser) {
+      setRole(currentUser.role);
+    }
   }, []);
 
-  // Handlers
+  // Synchronize Privy authenticated user with ProofPay workspace
+  useEffect(() => {
+    if (privyAuthenticated && privyUser && !currentUser) {
+      const walletAddress =
+        privyUser.wallet?.address ||
+        (privyUser.linkedAccounts?.find((a: any) => a.type === 'wallet') as any)?.address ||
+        '0x37Da1f17986e4DC6d4E8D86713791698F07c8099';
+
+      const email =
+        privyUser.email?.address ||
+        (privyUser.google?.email as string) ||
+        `${privyUser.id.slice(0, 10)}@privy.id`;
+
+      const userObj = {
+        id: privyUser.id,
+        privyUserId: privyUser.id,
+        email,
+        walletAddress,
+        role: role || 'CLIENT',
+        organizationId: 'org-acme-design',
+        name: email.split('@')[0],
+      };
+
+      const orgObj = {
+        id: 'org-acme-design',
+        name: 'ACME Design Studio',
+        privyOrgId: 'privy-org-acme',
+        walletAddress: '0x37Da1f17986e4DC6d4E8D86713791698F07c8099',
+        maxReleaseLimitUsdc: 2500,
+      };
+
+      setCurrentUser(userObj);
+      setCurrentOrg(orgObj);
+      localStorage.setItem('proofpay_user', JSON.stringify(userObj));
+      localStorage.setItem('proofpay_org', JSON.stringify(orgObj));
+      setView('WORKSPACE');
+      loadJobs();
+    }
+  }, [privyAuthenticated, privyUser]);
+
+  const handleOpenLogin = (targetRole: 'CLIENT' | 'FREELANCER') => {
+    setAuthModalTargetRole(targetRole);
+    setIsAuthModalOpen(true);
+  };
+
+  const handleLoginSuccess = (user: any, org?: any) => {
+    setCurrentUser(user);
+    setCurrentOrg(org || null);
+    localStorage.setItem('proofpay_user', JSON.stringify(user));
+    if (org) {
+      localStorage.setItem('proofpay_org', JSON.stringify(org));
+    }
+    setRole(user.role);
+    setView('WORKSPACE');
+    loadJobs();
+  };
+
+  const handleLogout = async () => {
+    try {
+      if (privyAuthenticated) {
+        await privyLogout();
+      }
+    } catch (e) {
+      console.error('Privy logout error:', e);
+    }
+    setCurrentUser(null);
+    setCurrentOrg(null);
+    localStorage.removeItem('proofpay_user');
+    localStorage.removeItem('proofpay_org');
+    setView('LANDING');
+    setSelectedJob(null);
+  };
+
   const handleFund = async (jobId: string) => {
     try {
-      await fundJob(jobId, '0xmockArcTestnetTxHashDeposit');
-      loadJobs();
+      await fundJob(jobId);
+      await loadJobs();
     } catch (err: any) {
       setErrorAlert(err.message);
     }
@@ -64,7 +167,7 @@ export function App() {
   const handleAccept = async (jobId: string) => {
     try {
       await acceptJob(jobId);
-      loadJobs();
+      await loadJobs();
     } catch (err: any) {
       setErrorAlert(err.message);
     }
@@ -73,7 +176,7 @@ export function App() {
   const handleSubmitDeliverable = async (jobId: string, url: string) => {
     try {
       await submitWork(jobId, url);
-      loadJobs();
+      await loadJobs();
     } catch (err: any) {
       setErrorAlert(err.message);
     }
@@ -82,13 +185,12 @@ export function App() {
   const handleApprove = async (jobId: string) => {
     try {
       await approveWork(jobId);
-      loadJobs();
+      await loadJobs();
     } catch (err: any) {
       setErrorAlert(err.message);
     }
   };
 
-  // Payment Release Orchestration
   const handleInitiateRelease = async (job: Job) => {
     setErrorAlert(null);
     setSuccessResult(null);
@@ -101,7 +203,6 @@ export function App() {
       if (result.riskDecision.requiresHumanVerification) {
         setIsSelfieModalOpen(true);
       } else {
-        // Low risk -> Direct release without biometric challenge
         await handleReleaseExecution(result.paymentIntent.id, undefined, job);
       }
     } catch (err: any) {
@@ -115,85 +216,94 @@ export function App() {
     jobContext?: Job | null
   ) => {
     try {
+      const targetJob = jobContext || pendingJob;
       const res = await verifyAndRelease(intentId, proof);
       setIsSelfieModalOpen(false);
       setSuccessResult({
-        txHash: res.arc.txHash,
-        explorerUrl: res.arc.explorerUrl,
-        jobTitle: (jobContext || pendingJob)?.title || 'Freelance Escrow',
-        amount: (jobContext || pendingJob)?.amountUsdc || 500,
+        txHash: res.arc?.txHash,
+        explorerUrl: res.arc?.explorerUrl,
+        jobTitle: targetJob?.title || 'Freelance Milestone',
+        amount: targetJob?.amountUsdc || 500,
+        recipientAddress: targetJob?.freelancerPayoutAddress || '',
       });
-      loadJobs();
+      await loadJobs();
       if (selectedJob) {
         setSelectedJob(res.job);
       }
     } catch (err: any) {
       setIsSelfieModalOpen(false);
       setErrorAlert(err.message || 'Payment execution blocked.');
-      loadJobs();
+      await loadJobs();
     }
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
+    <div className="min-h-screen bg-[#FAF9F6] text-neutral-950 flex flex-col font-sans selection:bg-neutral-900 selection:text-white">
       <Navbar
+        currentUser={currentUser}
+        currentOrg={currentOrg}
         currentRole={role}
-        onToggleRole={setRole}
+        currentView={view}
+        onGoHome={() => {
+          setView('LANDING');
+          setSelectedJob(null);
+        }}
+        onGoWorkspace={(targetRole) => {
+          if (targetRole) {
+            setRole(targetRole);
+          }
+          setView('WORKSPACE');
+        }}
+        onOpenLogin={handleOpenLogin}
+        onLogout={handleLogout}
         onOpenCreateJob={() => setIsCreateModalOpen(true)}
       />
 
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
-        {/* Success Banner */}
-        {successResult && (
-          <div className="bg-emerald-950/40 border border-emerald-500/50 p-4 rounded-2xl flex items-center justify-between text-xs text-emerald-200 shadow-lg">
-            <div className="flex items-center gap-3">
-              <div className="h-8 w-8 rounded-full bg-emerald-500/20 flex items-center justify-center text-emerald-400">
-                <CheckCircle2 className="h-5 w-5" />
-              </div>
-              <div>
-                <h4 className="font-bold text-white text-sm">
-                  Payment Released Successfully! (${successResult.amount} USDC)
-                </h4>
-                <p className="text-emerald-300/80 mt-0.5">
-                  Verified by World Selfie Check & Privy Policy. Settled on Arc Testnet.
-                </p>
-              </div>
-            </div>
-            <a
-              href={successResult.explorerUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-lg font-semibold flex items-center gap-1 transition-colors"
-            >
-              View on ArcScan
-              <ExternalLink className="h-3.5 w-3.5" />
-            </a>
-          </div>
-        )}
-
-        {/* Error / Blocked Banner */}
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-6">
+        {/* Error / Blocked Notification Banner */}
         {errorAlert && (
-          <div className="bg-rose-950/40 border border-rose-500/50 p-4 rounded-2xl flex items-center justify-between text-xs text-rose-200 shadow-lg">
+          <div className="bg-white border border-rose-200 p-5 rounded-3xl flex items-center justify-between text-xs text-rose-900 shadow-sm animate-in fade-in">
             <div className="flex items-center gap-3">
-              <div className="h-8 w-8 rounded-full bg-rose-500/20 flex items-center justify-center text-rose-400">
-                <AlertOctagon className="h-5 w-5" />
+              <div className="h-10 w-10 rounded-full bg-rose-100 flex items-center justify-center text-rose-700 shrink-0">
+                <AlertCircle className="h-5 w-5" />
               </div>
               <div>
-                <h4 className="font-bold text-white text-sm">Payment Execution Blocked</h4>
-                <p className="text-rose-300/80 mt-0.5">{errorAlert}</p>
+                <h4 className="font-bold text-neutral-950 text-sm">Action Blocked / Error</h4>
+                <p className="text-neutral-600 mt-0.5">{errorAlert}</p>
               </div>
             </div>
             <button
               onClick={() => setErrorAlert(null)}
-              className="text-xs text-rose-400 hover:text-white"
+              className="text-xs text-neutral-500 hover:text-black font-semibold px-3 py-1.5 rounded-full hover:bg-neutral-100 transition-colors"
             >
               Dismiss
             </button>
           </div>
         )}
 
-        {/* Dynamic Views */}
-        {selectedJob ? (
+        {/* View Switcher */}
+        {view === 'LANDING' ? (
+          <LandingPage
+            onEnterClient={() => {
+              if (currentUser && currentUser.role === 'CLIENT') {
+                setRole('CLIENT');
+                setView('WORKSPACE');
+              } else {
+                handleOpenLogin('CLIENT');
+              }
+            }}
+            onEnterFreelancer={() => {
+              if (currentUser && currentUser.role === 'FREELANCER') {
+                setRole('FREELANCER');
+                setView('WORKSPACE');
+              } else {
+                handleOpenLogin('FREELANCER');
+              }
+            }}
+            clientLoggedIn={Boolean(currentUser && currentUser.role === 'CLIENT')}
+            freelancerLoggedIn={Boolean(currentUser && currentUser.role === 'FREELANCER')}
+          />
+        ) : selectedJob ? (
           <JobDetailsPage
             job={selectedJob}
             onBack={() => setSelectedJob(null)}
@@ -202,14 +312,18 @@ export function App() {
         ) : role === 'CLIENT' ? (
           <ClientDashboard
             jobs={jobs}
+            currentUser={currentUser}
+            currentOrg={currentOrg}
             onSelectJob={setSelectedJob}
             onFundJob={handleFund}
             onApproveWork={handleApprove}
             onInitiateRelease={handleInitiateRelease}
+            onOpenCreateJob={() => setIsCreateModalOpen(true)}
           />
         ) : (
           <FreelancerDashboard
             jobs={jobs}
+            currentUser={currentUser}
             onSelectJob={setSelectedJob}
             onAcceptJob={handleAccept}
             onSubmitWork={handleSubmitDeliverable}
@@ -217,13 +331,23 @@ export function App() {
         )}
       </main>
 
-      {/* Modals */}
+      {/* Authentication Modal for Client / Freelancer */}
+      <AuthModal
+        isOpen={isAuthModalOpen}
+        onClose={() => setIsAuthModalOpen(false)}
+        targetRole={authModalTargetRole}
+        onLoginSuccess={handleLoginSuccess}
+        onSwitchRole={setAuthModalTargetRole}
+      />
+
+      {/* Create Job Modal */}
       <CreateJobModal
         isOpen={isCreateModalOpen}
         onClose={() => setIsCreateModalOpen(false)}
         onJobCreated={loadJobs}
       />
 
+      {/* World ID Selfie Check Modal */}
       {activeIntent && pendingJob && (
         <WorldSelfieModal
           isOpen={isSelfieModalOpen}
@@ -237,6 +361,19 @@ export function App() {
             setIsSelfieModalOpen(false);
             setErrorAlert(errMsg);
           }}
+        />
+      )}
+
+      {/* Release Confirmation Modal */}
+      {successResult && (
+        <ReleaseSuccessModal
+          isOpen={Boolean(successResult)}
+          onClose={() => setSuccessResult(null)}
+          txHash={successResult.txHash}
+          explorerUrl={successResult.explorerUrl}
+          jobTitle={successResult.jobTitle}
+          amount={successResult.amount}
+          recipientAddress={successResult.recipientAddress}
         />
       )}
     </div>

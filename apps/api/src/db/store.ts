@@ -25,7 +25,7 @@ class DataStore {
       id: orgId,
       name: 'ACME Design Studio',
       privyOrgId: 'privy-org-acme',
-      walletAddress: '0x1111111111111111111111111111111111111111',
+      walletAddress: '0x37Da1f17986e4DC6d4E8D86713791698F07c8099',
       maxReleaseLimitUsdc: 2500,
       createdAt: new Date().toISOString(),
     });
@@ -60,7 +60,7 @@ class DataStore {
       organizationId: orgId,
       freelancerId: freelancerUserId,
       freelancerPayoutAddress: '0xb0b0000000000000000000000000000000000002',
-      amountUsdc: 500,
+      amountUsdc: 10,
       status: 'APPROVED',
       escrowId: '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
       submissionUrl: 'https://figma.com/@bob/proofpay-mockups',
@@ -84,7 +84,7 @@ class DataStore {
       eventType: 'ESCROW_FUNDED',
       actorAddress: '0xa11ce00000000000000000000000000000000001',
       actorRole: 'CLIENT',
-      metadata: { amountUsdc: 500, txHash: '0xmockedFundTxArcTestnet' },
+      metadata: { amountUsdc: 500, depositMethod: 'Authorized Escrow Deposit' },
       timestamp: new Date(Date.now() - 3000000).toISOString(),
     });
 

@@ -1,5 +1,6 @@
 import { ethers } from 'ethers';
 import { config } from '../config.js';
+import { logger } from '../utils/logger.js';
 
 export class ArcService {
   private static provider = new ethers.JsonRpcProvider(config.arc.rpcUrl);
@@ -21,6 +22,13 @@ export class ArcService {
 
     if (isConfigured) {
       try {
+        logger.arc(`Submitting releaseEscrow transaction to Arc Testnet...`, {
+          contract: config.arc.escrowAddress,
+          escrowId,
+          recipient: recipientAddress,
+          amountUsdc,
+        });
+
         const wallet = new ethers.Wallet(config.arc.relayerPrivateKey, this.provider);
         const abi = [
           'function releaseEscrow(bytes32 escrowId, address recipient, uint256 amount, bytes32 authorizationHash) external',
@@ -36,7 +44,14 @@ export class ArcService {
           amountUnits,
           authorizationHash
         );
+
+        logger.arc(`Arc transaction broadcasted: ${tx.hash}. Waiting for onchain block confirmation...`);
         const receipt = await tx.wait();
+
+        logger.arc(`Arc transaction confirmed in block #${receipt.blockNumber}!`, {
+          txHash: receipt.hash,
+          gasUsed: receipt.gasUsed?.toString(),
+        });
 
         return {
           txHash: receipt.hash,
@@ -44,16 +59,24 @@ export class ArcService {
           blockNumber: receipt.blockNumber,
         };
       } catch (err: any) {
+        logger.arcError(`Arc onchain execution failed: ${err.message}`, {
+          contractAddress: config.arc.escrowAddress,
+          escrowId,
+          recipient: recipientAddress,
+        });
         throw new Error(`Arc Escrow onchain execution error: ${err.message}`);
       }
     }
 
-    // Mocked / Local demo fallback on Arc Testnet
+    // Demo / testnet simulation fallback when relayer key is not set
+    logger.arc(
+      `Relayer key not set in .env (ARC_RELAYER_PRIVATE_KEY) — Generating verified mock transaction hash for Arc Testnet demo`
+    );
     const mockTxHash = `0x${ethers.hexlify(ethers.randomBytes(32)).slice(2)}`;
     return {
       txHash: mockTxHash,
       explorerUrl: `${config.arc.explorerUrl}/tx/${mockTxHash}`,
-      blockNumber: 42109,
+      blockNumber: 60441400,
     };
   }
 }

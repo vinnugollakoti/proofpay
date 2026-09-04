@@ -1,6 +1,13 @@
 import { User, Organization, Job, PaymentIntent, VerificationRecord, AuditEvent } from '../types/index.js';
 
-class InMemoryStore {
+/**
+ * In-memory data store with seeded demo data.
+ *
+ * This runs without any database — just start the server.
+ * When Prisma + Supabase are configured, services can call
+ * getPrisma() from './prisma.js' for persistent storage.
+ */
+class DataStore {
   public users: Map<string, User> = new Map();
   public organizations: Map<string, Organization> = new Map();
   public jobs: Map<string, Job> = new Map();
@@ -53,7 +60,7 @@ class InMemoryStore {
       organizationId: orgId,
       freelancerId: freelancerUserId,
       freelancerPayoutAddress: '0xb0b0000000000000000000000000000000000002',
-      amountUsdc: 500, // Trigger high risk check!
+      amountUsdc: 500,
       status: 'APPROVED',
       escrowId: '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
       submissionUrl: 'https://figma.com/@bob/proofpay-mockups',
@@ -103,4 +110,4 @@ class InMemoryStore {
   }
 }
 
-export const db = new InMemoryStore();
+export const db = new DataStore();

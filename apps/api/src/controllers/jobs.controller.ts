@@ -4,6 +4,7 @@ import { ethers } from 'ethers';
 import { db } from '../db/store.js';
 import { Job } from '../types/index.js';
 import { AuditService } from '../services/audit.service.js';
+import { logger } from '../utils/logger.js';
 
 export class JobsController {
   static async listJobs(req: Request, res: Response) {
@@ -16,7 +17,8 @@ export class JobsController {
   static async getJob(req: Request, res: Response) {
     const job = db.jobs.get(req.params.id);
     if (!job) {
-      return res.status(404).json({ error: 'Job not found' });
+      logger.paymentError(`GET /api/jobs/${req.params.id} — Job not found`);
+      return res.status(404).json({ error: `Job with ID "${req.params.id}" not found` });
     }
     const timeline = AuditService.getJobTimeline(job.id);
     return res.json({ job, timeline });
@@ -24,9 +26,14 @@ export class JobsController {
 
   static async createJob(req: Request, res: Response) {
     const { title, description, amountUsdc, freelancerPayoutAddress } = req.body;
+    logger.payment(`Creating job milestone: "${title}" ($${amountUsdc} USDC)`, {
+      freelancerPayoutAddress,
+    });
 
     if (!title || !amountUsdc || !freelancerPayoutAddress) {
-      return res.status(400).json({ error: 'Missing required fields: title, amountUsdc, freelancerPayoutAddress' });
+      const errorMsg = 'Missing required fields: title, amountUsdc, freelancerPayoutAddress';
+      logger.paymentError(`Failed to create job: ${errorMsg}`, req.body);
+      return res.status(400).json({ error: errorMsg });
     }
 
     const client = Array.from(db.users.values()).find((u) => u.role === 'CLIENT');
@@ -55,12 +62,16 @@ export class JobsController {
       'CLIENT'
     );
 
+    logger.payment(`Job created successfully (${newJob.id}): "${newJob.title}"`);
     return res.status(201).json({ job: newJob });
   }
 
   static async acceptJob(req: Request, res: Response) {
     const job = db.jobs.get(req.params.id);
-    if (!job) return res.status(404).json({ error: 'Job not found' });
+    if (!job) {
+      logger.paymentError(`POST /api/jobs/${req.params.id}/accept — Job not found`);
+      return res.status(404).json({ error: 'Job not found' });
+    }
 
     job.status = 'ACCEPTED';
     job.updatedAt = new Date().toISOString();
@@ -73,12 +84,16 @@ export class JobsController {
       'FREELANCER'
     );
 
+    logger.payment(`Job "${job.title}" accepted by freelancer (${job.freelancerPayoutAddress})`);
     return res.json({ job });
   }
 
   static async fundJob(req: Request, res: Response) {
     const job = db.jobs.get(req.params.id);
-    if (!job) return res.status(404).json({ error: 'Job not found' });
+    if (!job) {
+      logger.paymentError(`POST /api/jobs/${req.params.id}/fund — Job not found`);
+      return res.status(404).json({ error: 'Job not found' });
+    }
 
     const { txHash } = req.body;
     job.status = 'FUNDED';
@@ -98,12 +113,16 @@ export class JobsController {
       'CLIENT'
     );
 
+    logger.arc(`Escrow funded on Arc for job "${job.title}": $${job.amountUsdc} USDC (Escrow: ${job.escrowId.slice(0, 16)}...)`);
     return res.json({ job });
   }
 
   static async submitWork(req: Request, res: Response) {
     const job = db.jobs.get(req.params.id);
-    if (!job) return res.status(404).json({ error: 'Job not found' });
+    if (!job) {
+      logger.paymentError(`POST /api/jobs/${req.params.id}/submit-work — Job not found`);
+      return res.status(404).json({ error: 'Job not found' });
+    }
 
     const { submissionUrl } = req.body;
     job.status = 'WORK_SUBMITTED';
@@ -118,12 +137,16 @@ export class JobsController {
       'FREELANCER'
     );
 
+    logger.payment(`Work submitted for job "${job.title}": ${job.submissionUrl}`);
     return res.json({ job });
   }
 
   static async approveWork(req: Request, res: Response) {
     const job = db.jobs.get(req.params.id);
-    if (!job) return res.status(404).json({ error: 'Job not found' });
+    if (!job) {
+      logger.paymentError(`POST /api/jobs/${req.params.id}/approve — Job not found`);
+      return res.status(404).json({ error: 'Job not found' });
+    }
 
     job.status = 'APPROVED';
     job.updatedAt = new Date().toISOString();
@@ -136,6 +159,7 @@ export class JobsController {
       'CLIENT'
     );
 
+    logger.payment(`Work approved for job "${job.title}" — ready for payment release`);
     return res.json({ job });
   }
 }

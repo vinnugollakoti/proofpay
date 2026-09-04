@@ -1,96 +1,106 @@
 import React from 'react';
-import { AuditEvent } from '../types/index.js';
-import { CheckCircle2, Clock, AlertTriangle, ShieldCheck, ArrowUpRight } from 'lucide-react';
+import { AuditEvent } from '../types/index';
+import { ArcAddress } from './ArcAddress';
+import { CheckCircle2, Clock, AlertTriangle, ShieldCheck, ArrowUpRight, ExternalLink } from 'lucide-react';
 
 interface AuditTimelineProps {
   events: AuditEvent[];
 }
 
 export const AuditTimeline: React.FC<AuditTimelineProps> = ({ events }) => {
-  const getEventBadge = (type: string) => {
-    if (type.includes('RELEASED') || type.includes('COMPLETED') || type.includes('VERIFIED')) {
-      return {
-        icon: <CheckCircle2 className="h-4 w-4 text-emerald-400" />,
-        bg: 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300',
-      };
-    }
-    if (type.includes('BLOCKED') || type.includes('FAILED')) {
-      return {
-        icon: <AlertTriangle className="h-4 w-4 text-rose-400" />,
-        bg: 'bg-rose-500/10 border-rose-500/30 text-rose-300',
-      };
-    }
-    return {
-      icon: <Clock className="h-4 w-4 text-cyan-400" />,
-      bg: 'bg-cyan-500/10 border-cyan-500/30 text-cyan-300',
-    };
-  };
-
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
-      <div className="flex items-center justify-between mb-4 pb-2 border-b border-slate-800">
-        <h3 className="text-sm font-semibold text-white flex items-center gap-2">
-          <ShieldCheck className="h-4 w-4 text-emerald-400" />
+    <div className="bg-white border border-neutral-200 rounded-3xl p-8 shadow-xs">
+      <div className="flex items-center justify-between mb-6 pb-4 border-b border-neutral-100">
+        <h3 className="text-sm font-bold text-neutral-950 flex items-center gap-2">
+          <ShieldCheck className="h-4 w-4 text-black" />
           Cryptographic Audit Trail
         </h3>
-        <span className="text-xs text-slate-400">{events.length} Recorded Events</span>
+        <span className="text-xs text-neutral-500 font-mono">{events.length} Events Logged</span>
       </div>
 
       <div className="space-y-4">
         {events.length === 0 ? (
-          <p className="text-xs text-slate-500 italic">No audit events recorded yet.</p>
+          <p className="text-xs text-neutral-400 italic">No audit events recorded yet.</p>
         ) : (
           events.map((event, idx) => {
-            const badge = getEventBadge(event.eventType);
+            const isSuccess =
+              event.eventType.includes('RELEASED') ||
+              event.eventType.includes('COMPLETED') ||
+              event.eventType.includes('VERIFIED');
+            const isBlocked =
+              event.eventType.includes('BLOCKED') || event.eventType.includes('FAILED');
+
             return (
-              <div key={event.id || idx} className="relative pl-6 pb-2 border-l border-slate-800 last:border-0">
-                <div className="absolute -left-2 top-0.5 bg-slate-950 p-0.5 rounded-full">
-                  {badge.icon}
+              <div
+                key={event.id || idx}
+                className="relative pl-6 pb-4 border-l border-neutral-200 last:border-0 last:pb-0"
+              >
+                <div className="absolute -left-1.5 top-1 bg-white">
+                  <span
+                    className={`block h-3 w-3 rounded-full border-2 ${
+                      isSuccess
+                        ? 'border-black bg-black'
+                        : isBlocked
+                        ? 'border-neutral-900 bg-white'
+                        : 'border-neutral-400 bg-white'
+                    }`}
+                  ></span>
                 </div>
+
                 <div className="flex items-baseline justify-between">
-                  <span className="text-xs font-semibold text-slate-200">
+                  <span className="text-xs font-bold text-neutral-950">
                     {event.eventType.replace(/_/g, ' ')}
                   </span>
-                  <span className="text-[10px] text-slate-500 font-mono">
+                  <span className="text-[10px] text-neutral-400 font-mono">
                     {new Date(event.timestamp).toLocaleTimeString()}
                   </span>
                 </div>
 
-                <div className="mt-1 text-xs text-slate-400 bg-slate-950/60 p-2.5 rounded-lg border border-slate-800/80 font-mono">
+                <div className="mt-1.5 text-xs text-neutral-600 bg-neutral-50 p-3 rounded-2xl border border-neutral-200 font-mono">
                   {event.actorRole && (
-                    <div className="text-[11px] text-slate-400 mb-1">
-                      <span className="text-slate-500">Actor:</span>{' '}
-                      <span className="text-indigo-300 font-semibold">{event.actorRole}</span>{' '}
+                    <div className="text-[10px] text-neutral-400 uppercase tracking-wider mb-1 flex items-center gap-1.5">
+                      <span>Actor: <strong className="text-neutral-900 font-semibold">{event.actorRole}</strong></span>
                       {event.actorAddress && (
-                        <span className="text-slate-500">({event.actorAddress.slice(0, 8)}...)</span>
+                        <span>
+                          (<ArcAddress address={event.actorAddress} className="text-neutral-600 font-normal" />)
+                        </span>
                       )}
                     </div>
                   )}
 
-                  {event.metadata.txHash && (
-                    <div className="mt-1 flex items-center gap-1.5 text-emerald-400">
-                      <span>Arc Tx:</span>
-                      <a
-                        href={`https://testnet.arcscan.app/tx/${event.metadata.txHash}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="underline hover:text-emerald-300 flex items-center gap-0.5"
-                      >
-                        {event.metadata.txHash.slice(0, 14)}...
-                        <ArrowUpRight className="h-3 w-3" />
-                      </a>
-                    </div>
-                  )}
+                  {event.metadata && (
+                    <div className="text-[11px] text-neutral-700 break-all space-y-0.5">
+                      {Object.entries(event.metadata).map(([k, v]) => {
+                        const isAddress =
+                          typeof v === 'string' && v.startsWith('0x') && v.length === 42;
+                        const isTx =
+                          k.toLowerCase().includes('txhash') &&
+                          typeof v === 'string' &&
+                          v.startsWith('0x');
 
-                  {event.metadata.nullifierHash && (
-                    <div className="text-cyan-400 text-[11px]">
-                      World Nullifier: {event.metadata.nullifierHash.slice(0, 16)}...
-                    </div>
-                  )}
-
-                  {event.metadata.reason && (
-                    <div className="text-rose-400 text-[11px] mt-0.5">
-                      ⚠️ {event.metadata.reason}
+                        return (
+                          <div key={k} className="flex items-center gap-1 flex-wrap">
+                            <span className="text-neutral-400">{k}:</span>{' '}
+                            {isAddress ? (
+                              <ArcAddress address={v as string} className="text-neutral-900 font-medium" />
+                            ) : isTx ? (
+                              <a
+                                href={`https://testnet.arcscan.app/tx/${v}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-neutral-900 font-medium underline flex items-center gap-1"
+                              >
+                                {(v as string).slice(0, 10)}...{(v as string).slice(-6)}
+                                <ExternalLink className="h-3 w-3" />
+                              </a>
+                            ) : (
+                              <span className="text-neutral-900 font-medium">
+                                {typeof v === 'object' ? JSON.stringify(v) : String(v)}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
                 </div>

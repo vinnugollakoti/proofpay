@@ -227,8 +227,7 @@ export class JobsController {
       {
         escrowId,
         amountUsdc: job.amountUsdc,
-        chain: 'Arc Testnet (5042002)',
-        txHash: txHash || '0xmockArcFundTransactionHash',
+        txHash: txHash || undefined,
       },
       '0xa11ce00000000000000000000000000000000001',
       'CLIENT'

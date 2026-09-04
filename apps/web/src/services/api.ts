@@ -1,15 +1,70 @@
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
+async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+  const url = `${API_URL}${endpoint}`;
+  const method = options.method || 'GET';
+
+  console.log(
+    `%c[ProofPay API] ➡️ ${method} ${endpoint}`,
+    'color: #0284c7; font-weight: bold;',
+    options.body ? JSON.parse(options.body as string) : ''
+  );
+
+  try {
+    const res = await fetch(url, options);
+    const data = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      const errorMsg = data.error || data.message || `Request failed with HTTP status ${res.status}`;
+      console.error(
+        `%c[ProofPay API Error] ❌ ${method} ${endpoint} (HTTP ${res.status})`,
+        'color: #e11d48; font-weight: bold; background-color: #ffe4e6; padding: 2px 6px; border-radius: 4px;',
+        {
+          status: res.status,
+          endpoint,
+          responseBody: data,
+          error: errorMsg,
+        }
+      );
+      throw new Error(errorMsg);
+    }
+
+    console.log(
+      `%c[ProofPay API] 🟢 ${method} ${endpoint} (HTTP ${res.status})`,
+      'color: #059669; font-weight: bold;',
+      data
+    );
+    return data as T;
+  } catch (err: any) {
+    console.error(
+      `%c[ProofPay Network/API Failure] ${method} ${endpoint}:`,
+      'color: #e11d48; font-weight: bold;',
+      err.message
+    );
+    throw err;
+  }
+}
+
+export async function loginUser(credentials: { email: string; password: string; role?: string }) {
+  return request<{ success: boolean; user: any; organization?: any }>('/api/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(credentials),
+  });
+}
+
+export async function fetchSession(role?: string) {
+  return request<{ user: any; organization?: any }>(
+    `/api/auth/session${role ? `?role=${role}` : ''}`
+  );
+}
+
 export async function fetchJobs() {
-  const res = await fetch(`${API_URL}/api/jobs`);
-  if (!res.ok) throw new Error('Failed to fetch jobs');
-  return res.json();
+  return request<{ jobs: any[] }>('/api/jobs');
 }
 
 export async function fetchJob(id: string) {
-  const res = await fetch(`${API_URL}/api/jobs/${id}`);
-  if (!res.ok) throw new Error('Failed to fetch job');
-  return res.json();
+  return request<{ job: any; timeline: any[] }>(`/api/jobs/${id}`);
 }
 
 export async function createJob(data: {
@@ -18,71 +73,68 @@ export async function createJob(data: {
   amountUsdc: number;
   freelancerPayoutAddress: string;
 }) {
-  const res = await fetch(`${API_URL}/api/jobs`, {
+  return request<{ job: any }>('/api/jobs', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
-  if (!res.ok) throw new Error('Failed to create job');
-  return res.json();
 }
 
 export async function acceptJob(id: string) {
-  const res = await fetch(`${API_URL}/api/jobs/${id}/accept`, { method: 'POST' });
-  if (!res.ok) throw new Error('Failed to accept job');
-  return res.json();
+  return request<{ job: any }>(`/api/jobs/${id}/accept`, { method: 'POST' });
 }
 
 export async function fundJob(id: string, txHash?: string) {
-  const res = await fetch(`${API_URL}/api/jobs/${id}/fund`, {
+  return request<{ job: any }>(`/api/jobs/${id}/fund`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ txHash }),
   });
-  if (!res.ok) throw new Error('Failed to fund job');
-  return res.json();
 }
 
 export async function submitWork(id: string, submissionUrl: string) {
-  const res = await fetch(`${API_URL}/api/jobs/${id}/submit-work`, {
+  return request<{ job: any }>(`/api/jobs/${id}/submit-work`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ submissionUrl }),
   });
-  if (!res.ok) throw new Error('Failed to submit work');
-  return res.json();
 }
 
 export async function approveWork(id: string) {
-  const res = await fetch(`${API_URL}/api/jobs/${id}/approve`, { method: 'POST' });
-  if (!res.ok) throw new Error('Failed to approve work');
-  return res.json();
+  return request<{ job: any }>(`/api/jobs/${id}/approve`, { method: 'POST' });
 }
 
 export async function createReleaseIntent(jobId: string) {
-  const res = await fetch(`${API_URL}/api/payments/release-intent`, {
+  return request<any>('/api/payments/release-intent', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ jobId }),
   });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || 'Failed to create release intent');
-  return data;
 }
 
 export async function verifyAndRelease(paymentIntentId: string, worldProof?: any) {
-  const res = await fetch(`${API_URL}/api/payments/verify-and-release`, {
+  return request<any>('/api/payments/verify-and-release', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ paymentIntentId, worldProof }),
   });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || 'Release execution rejected');
-  return data;
 }
 
 export async function fetchAuditTimeline(jobId: string) {
-  const res = await fetch(`${API_URL}/api/audit/${jobId}`);
-  if (!res.ok) throw new Error('Failed to fetch audit timeline');
-  return res.json();
+  return request<{ jobId: string; jobTitle: string; timeline: any[] }>(`/api/audit/${jobId}`);
+}
+
+export async function fetchVaultStatus() {
+  return request<{
+    success: boolean;
+    chainId: number;
+    escrowContractAddress: string;
+    vaultAddress: string;
+    gasBalance: string;
+    usdcBalance: string;
+    explorerUrl: string;
+    privyOrgId: string;
+    privyAppId: string;
+    status: string;
+  }>('/api/payments/vault-status');
 }

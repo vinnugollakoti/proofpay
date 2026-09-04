@@ -19,7 +19,7 @@ Client (ACME Studio)
 Frontend (React + Vite + Tailwind)
    │
    ▼
-Backend API (Node.js + Express + TypeScript)
+Backend API (Node.js + Express + TypeScript + Prisma ORM)
    │
    ▼
 Deterministic Risk Engine (Evaluates Amount ≥ 500 USDC, First-time Recipient, Velocity)
@@ -48,11 +48,12 @@ USDC Settlement ──▶ Freelancer Wallet
 proofpay/
 ├── apps/
 │   ├── api/             # Express.js + TypeScript Backend Service
+│   │   ├── prisma/      # Prisma ORM Schema (schema.prisma)
 │   │   ├── src/
 │   │   │   ├── controllers/   # Auth, Jobs, Payments, Audit
 │   │   │   ├── services/      # World, Privy, Arc, Risk Engine, Audit
 │   │   │   ├── routes/        # REST Endpoints
-│   │   │   ├── db/            # Schema & Seeded Datastore
+│   │   │   ├── db/            # Prisma Client (prisma.ts) & Datastore
 │   │   │   └── config.ts      # Loads root .env
 │   └── web/             # React + Vite + Tailwind Frontend
 │       ├── src/
@@ -76,18 +77,24 @@ proofpay/
 
 ## Quick Start
 
-### 1. Environment Configuration (Single Unified Key Set)
-You only maintain **one** `.env` file at the root of `proofpay/`. Both the React frontend (Vite) and the Express backend read directly from this single file:
+### 1. Environment Configuration
+You only maintain **one** `.env` file at the root of `proofpay/`:
 ```bash
 cp .env.example .env
 ```
 
-### 2. Install Dependencies
+### 2. Install Dependencies & Generate Prisma Client
 ```bash
 pnpm install
+cd apps/api && pnpm db:generate
 ```
 
-### 3. Run Backend & Frontend
+### 3. Sync Database with Prisma ORM (When PostgreSQL is connected)
+```bash
+cd apps/api && pnpm db:push
+```
+
+### 4. Run Backend & Frontend
 ```bash
 # Terminal 1: Backend API (Port 4000)
 cd apps/api && pnpm dev
@@ -96,7 +103,7 @@ cd apps/api && pnpm dev
 cd apps/web && pnpm dev
 ```
 
-### 4. Test Smart Contracts
+### 5. Test Smart Contracts
 ```bash
 cd contracts && forge test
 ```

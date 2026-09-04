@@ -7,6 +7,8 @@ import { PrivyService } from '../services/privy.service.js';
 import { ArcService } from '../services/arc.service.js';
 import { AuditService } from '../services/audit.service.js';
 import { PaymentIntent } from '../types/index.js';
+import { getPrisma } from '../db/prisma.js';
+import { logger } from '../utils/logger.js';
 
 export class PaymentsController {
   /**
@@ -17,10 +19,23 @@ export class PaymentsController {
    */
   static async createReleaseIntent(req: Request, res: Response) {
     const { jobId } = req.body;
+    logger.payment(`Creating release intent for job ID: ${jobId}`, { requestBody: req.body });
+
     const job = db.jobs.get(jobId);
-    if (!job) return res.status(404).json({ error: 'Job not found' });
+    if (!job) {
+      logger.paymentError(`Job not found for release intent: "${jobId}"`);
+      return res.status(404).json({ error: `Job with ID "${jobId}" not found` });
+    }
+
     if (job.status !== 'APPROVED' && job.status !== 'FUNDED') {
-      return res.status(400).json({ error: `Job not in releasable state. Current status: ${job.status}` });
+      logger.paymentError(`Job "${job.title}" is in "${job.status}" state — requires "APPROVED" or "FUNDED" to release`, {
+        jobId: job.id,
+        currentStatus: job.status,
+      });
+      return res.status(400).json({
+        error: `Job not in releasable state. Current status is "${job.status}", but milestone must be "APPROVED" or "FUNDED".`,
+        currentStatus: job.status,
+      });
     }
 
     const intentId = `pi-${uuidv4().slice(0, 8)}`;
@@ -33,6 +48,11 @@ export class PaymentsController {
       amountUsdc: amount,
       recipientAddress: recipient,
       clientId: job.clientId,
+    });
+
+    logger.payment(`Deterministic Risk Assessment: ${riskDecision.riskLevel} RISK`, {
+      requiresHumanVerification: riskDecision.requiresHumanVerification,
+      reasons: riskDecision.reasons,
     });
 
     // Compute Cryptographic Signal Hash (binds Job + Intent + Recipient + Amount)
@@ -73,6 +93,8 @@ export class PaymentsController {
       intentId
     );
 
+    logger.payment(`Release intent registered (${intentId}) — Signal: ${signalHash.slice(0, 18)}... (TTL: 60s)`);
+
     return res.json({
       paymentIntent,
       riskDecision,
@@ -86,31 +108,51 @@ export class PaymentsController {
    */
   static async verifyAndRelease(req: Request, res: Response) {
     const { paymentIntentId, worldProof } = req.body;
+    logger.payment(`Verifying payment release for intent: "${paymentIntentId}"`, {
+      hasProof: Boolean(worldProof),
+      credentialType: worldProof?.credential_type || worldProof?.verification_level,
+    });
 
     const intent = db.paymentIntents.get(paymentIntentId);
-    if (!intent) return res.status(404).json({ error: 'Payment intent not found' });
+    if (!intent) {
+      logger.paymentError(`Payment intent "${paymentIntentId}" not found in registry`);
+      return res.status(404).json({ error: `Payment intent "${paymentIntentId}" not found` });
+    }
 
     const job = db.jobs.get(intent.jobId);
-    if (!job) return res.status(404).json({ error: 'Job not found' });
+    if (!job) {
+      logger.paymentError(`Associated job "${intent.jobId}" for intent "${intent.id}" not found`);
+      return res.status(404).json({ error: `Associated job "${intent.jobId}" not found` });
+    }
 
     // 1. Check TTL Expiration
-    if (new Date(intent.expiresAt).getTime() < Date.now()) {
+    const now = Date.now();
+    const expiresTimestamp = new Date(intent.expiresAt).getTime();
+    if (expiresTimestamp < now) {
+      const secondsOver = Math.round((now - expiresTimestamp) / 1000);
       intent.status = 'EXPIRED';
+      logger.paymentError(
+        `Payment authorization EXPIRED: 60s TTL exceeded by ${secondsOver}s for intent "${intent.id}"`
+      );
       AuditService.recordEvent(
         job.id,
         'PAYMENT_EXPIRED',
-        { paymentIntentId: intent.id, reason: 'Authorization TTL exceeded (60s limit).' },
+        { paymentIntentId: intent.id, reason: `Authorization TTL exceeded (${secondsOver}s past expiry).` },
         undefined,
         'SYSTEM',
         intent.id
       );
-      return res.status(400).json({ error: 'Payment authorization expired. Please request release again.' });
+      return res.status(400).json({
+        error: `Payment authorization window expired ${secondsOver}s ago. Please click "Release Payment" again.`,
+        code: 'AUTHORIZATION_EXPIRED',
+      });
     }
 
     // 2. World ID Verification (if required)
     if (intent.requiresHumanVerification) {
       if (!worldProof || !worldProof.nullifier_hash) {
         intent.status = 'BLOCKED';
+        logger.worldError(`Proof missing for high-risk payment intent "${intent.id}" — payment BLOCKED`);
         AuditService.recordEvent(
           job.id,
           'PAYMENT_BLOCKED_MISSING_PROOF',
@@ -120,8 +162,9 @@ export class PaymentsController {
           intent.id
         );
         return res.status(403).json({
-          error: 'Payment blocked: Human verification proof is required.',
+          error: 'Payment blocked: High-risk payout requires a verified World Selfie Check.',
           blocked: true,
+          code: 'HUMAN_VERIFICATION_REQUIRED',
         });
       }
 
@@ -137,6 +180,11 @@ export class PaymentsController {
         intent.id
       );
 
+      logger.world(`Submitting proof to World API for verification`, {
+        nullifier: worldProof.nullifier_hash?.slice(0, 16) + '...',
+        signal: intent.signalHash.slice(0, 16) + '...',
+      });
+
       const verificationResult = await WorldService.verifyProof(
         worldProof,
         intent.signalHash,
@@ -145,6 +193,11 @@ export class PaymentsController {
 
       if (!verificationResult.success) {
         intent.status = 'BLOCKED';
+        logger.worldError(`World proof rejected: ${verificationResult.error}`, {
+          paymentIntentId: intent.id,
+          nullifier: worldProof.nullifier_hash,
+        });
+
         AuditService.recordEvent(
           job.id,
           'WORLD_VERIFICATION_FAILED',
@@ -154,8 +207,9 @@ export class PaymentsController {
           intent.id
         );
         return res.status(403).json({
-          error: `Payment blocked: ${verificationResult.error}`,
+          error: `Payment blocked by World Verification: ${verificationResult.error}`,
           blocked: true,
+          code: 'WORLD_VERIFICATION_FAILED',
         });
       }
 
@@ -181,9 +235,16 @@ export class PaymentsController {
         'WORLD',
         intent.id
       );
+
+      logger.world(`Proof successfully verified by World API (Level: ${verificationResult.verificationLevel})`);
     }
 
     // 3. Privy Organization Policy & Authorization
+    logger.privy(`Checking Privy organization policy for client "${job.clientId}"`, {
+      amountUsdc: job.amountUsdc,
+      recipient: job.freelancerPayoutAddress,
+    });
+
     const policyResult = await PrivyService.evaluateOrganizationPolicy(
       job.clientId,
       job.amountUsdc,
@@ -192,6 +253,11 @@ export class PaymentsController {
 
     if (!policyResult.allowed) {
       intent.status = 'BLOCKED';
+      logger.privyError(`Privy organization policy rejected payment: ${policyResult.reason}`, {
+        clientId: job.clientId,
+        amount: job.amountUsdc,
+      });
+
       AuditService.recordEvent(
         job.id,
         'PRIVY_POLICY_REJECTED',
@@ -201,8 +267,9 @@ export class PaymentsController {
         intent.id
       );
       return res.status(403).json({
-        error: `Payment blocked: ${policyResult.reason}`,
+        error: `Payment blocked by Privy Policy: ${policyResult.reason}`,
         blocked: true,
+        code: 'PRIVY_POLICY_VIOLATION',
       });
     }
 
@@ -215,7 +282,11 @@ export class PaymentsController {
       intent.id
     );
 
+    logger.privy(`Privy organization policy passed`);
+
     // 4. Arc Escrow Release Execution
+    logger.arc(`Executing releaseEscrow on Arc Testnet (Escrow: ${job.escrowId || 'mock'}, Amount: $${job.amountUsdc} USDC)`);
+
     try {
       const arcResult = await ArcService.executeReleaseEscrow(
         job.escrowId || '0xmockEscrowId',
@@ -227,6 +298,19 @@ export class PaymentsController {
       intent.status = 'EXECUTED';
       job.status = 'COMPLETED';
       job.updatedAt = new Date().toISOString();
+
+      const prisma = getPrisma();
+      if (prisma) {
+        try {
+          await prisma.job.update({
+            where: { id: job.id },
+            data: { status: 'COMPLETED', updatedAt: new Date() },
+          });
+          logger.db(`Job ${job.id} marked COMPLETED in Supabase`);
+        } catch (err: any) {
+          logger.dbError(`Failed to update job status to COMPLETED in Supabase: ${err.message}`);
+        }
+      }
 
       AuditService.recordEvent(
         job.id,
@@ -243,6 +327,11 @@ export class PaymentsController {
         intent.id
       );
 
+      logger.payment(`SUCCESS: Payment released to ${job.freelancerPayoutAddress} on Arc Testnet`, {
+        txHash: arcResult.txHash,
+        explorerUrl: arcResult.explorerUrl,
+      });
+
       return res.json({
         success: true,
         paymentIntent: intent,
@@ -251,6 +340,8 @@ export class PaymentsController {
       });
     } catch (err: any) {
       intent.status = 'BLOCKED';
+      logger.arcError(`Arc onchain release transaction failed: ${err.message}`, err.stack);
+
       AuditService.recordEvent(
         job.id,
         'ARC_RELEASE_FAILED',
@@ -259,13 +350,19 @@ export class PaymentsController {
         'ARC',
         intent.id
       );
-      return res.status(500).json({ error: `Arc execution failed: ${err.message}` });
+      return res.status(500).json({
+        error: `Arc settlement failed: ${err.message}`,
+        code: 'ARC_EXECUTION_FAILED',
+      });
     }
   }
 
   static async getIntent(req: Request, res: Response) {
     const intent = db.paymentIntents.get(req.params.id);
-    if (!intent) return res.status(404).json({ error: 'Payment intent not found' });
+    if (!intent) {
+      logger.paymentError(`Payment intent "${req.params.id}" not found`);
+      return res.status(404).json({ error: 'Payment intent not found' });
+    }
     return res.json({ intent });
   }
 }

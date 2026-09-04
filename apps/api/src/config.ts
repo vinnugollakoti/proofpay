@@ -1,24 +1,34 @@
 import dotenv from 'dotenv';
 import path from 'path';
-import { fileURLToPath } from 'url';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 // Load root proofpay/.env first, then local fallback
-dotenv.config({ path: path.resolve(__dirname, '../../../../.env') });
-dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
+dotenv.config({ path: path.resolve(process.cwd(), '../../.env') });
+dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 dotenv.config();
 
 export const config = {
   port: parseInt(process.env.PORT || '4000', 10),
   nodeEnv: process.env.NODE_ENV || 'development',
   corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:5173',
+
+  // Database (Supabase PostgreSQL / Prisma)
   databaseUrl: process.env.DATABASE_URL || '',
+  directUrl: process.env.DIRECT_URL || process.env.DATABASE_URL || '',
+
+  // Supabase Client SDK
+  supabase: {
+    url: process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '',
+    anonKey: process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '',
+    serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || '',
+  },
+
   jwtSecret: process.env.JWT_SECRET || 'proofpay_default_jwt_secret',
 
   world: {
     appId: process.env.VITE_WORLD_APP_ID || process.env.WORLD_APP_ID || 'app_staging_proofpay_demo',
+    rpId: process.env.WORLD_RIP_ID || process.env.WORLD_RP_ID || '',
+    signerAddress: process.env.WORLD_SIGNER_ADDRESS || '',
+    key: process.env.WORLD_KEY || '',
     action: process.env.VITE_WORLD_ACTION || process.env.WORLD_ACTION || 'release-payment',
     verifyUrl: process.env.WORLD_VERIFY_URL || 'https://developer.world.org/api/v4/verify',
     mockVerification: process.env.WORLD_MOCK_VERIFICATION === 'true',

@@ -10,7 +10,26 @@ import { logger } from './utils/logger.js';
 
 const app = express();
 
-app.use(cors({ origin: config.corsOrigin.split(',').map((origin) => origin.trim()) }));
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      // Allow requests with no origin (curl, server-to-server, health checks)
+      if (!origin) return callback(null, true);
+      if (config.corsOrigin === '*' || !config.corsOrigin) return callback(null, true);
+      const allowed = config.corsOrigin.split(',').map((o) => o.trim());
+      if (
+        allowed.includes('*') ||
+        allowed.includes(origin) ||
+        origin.endsWith('.vercel.app') ||
+        origin.includes('localhost')
+      ) {
+        return callback(null, true);
+      }
+      return callback(null, true); // Permissive for hackathon deployment
+    },
+    credentials: true,
+  })
+);
 app.use(express.json());
 
 // Request & Response Logging Middleware for all APIs

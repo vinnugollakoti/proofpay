@@ -80,7 +80,7 @@ export async function checkSystemHealth(): Promise<Record<string, ServiceStatus>
   } else {
     try {
       const authHeader = 'Basic ' + Buffer.from(`${config.privy.appId}:${config.privy.appSecret}`).toString('base64');
-      const res = await fetch('https://auth.privy.io/api/v1/users', {
+      const res: any = await fetch('https://auth.privy.io/api/v1/users', {
         headers: {
           Authorization: authHeader,
           'privy-app-id': config.privy.appId,
@@ -122,7 +122,7 @@ export async function checkSystemHealth(): Promise<Record<string, ServiceStatus>
   } else {
     try {
       const fakeHash = '0x' + '1'.repeat(64);
-      const res = await fetch(`https://developer.world.org/api/v4/verify/${targetId}`, {
+      const res: any = await fetch(`https://developer.world.org/api/v4/verify/${targetId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

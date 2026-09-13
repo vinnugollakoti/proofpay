@@ -12,6 +12,14 @@ export interface SettlementResult {
   timestamp: string;
 }
 
+export interface FundingResult {
+  txHash: string;
+  explorerUrl: string;
+  blockNumber: number;
+  funderAddress: string;
+  timestamp: string;
+}
+
 export class ArcService {
   private static provider = new ethers.JsonRpcProvider(config.arc.rpcUrl);
 
@@ -61,20 +69,11 @@ export class ArcService {
         // Convert USDC to 6 decimals (standard ERC-20 on Arc system contract)
         const amountUnits = ethers.parseUnits(amountUsdc.toString(), 6);
 
-        // Check if escrow already funded onchain
+        // Release is never allowed to create a deposit. Funding must have its own
+        // confirmed transaction and audit record.
         const escrowRecord = await contract.escrows(formattedEscrowId);
         if (Number(escrowRecord.status) === 0) {
-          logger.arc(`Escrow ${formattedEscrowId.slice(0, 10)}... not yet funded onchain. Auto-funding from Privy/Relayer wallet...`, {
-            relayer: wallet.address,
-            recipient: recipientAddress,
-            amountUsdc,
-          });
-
-          // Fund the escrow
-          const fundTx = await contract.fundEscrow(formattedEscrowId, recipientAddress, amountUnits);
-          logger.arc(`Arc fundEscrow tx submitted: ${fundTx.hash}`);
-          await fundTx.wait();
-          logger.arc(`Arc escrow funded onchain! Proceeding to release...`);
+          throw new Error('Escrow does not exist on Arc. Fund the milestone first and wait for its confirmation.');
         }
 
         logger.arc(`Broadcasting onchain releaseEscrow transaction on Arc Testnet (5042002)...`, {
@@ -120,6 +119,57 @@ export class ArcService {
       settled: true,
       status: 'SETTLED',
       mode: 'PROTOCOL_RECORDED',
+      timestamp: new Date().toISOString(),
+    };
+  }
+
+  /**
+   * Deposits USDC into the deployed escrow contract. This is deliberately
+   * separate from release: a job is never marked FUNDED until this receipt is
+   * confirmed on Arc.
+   */
+  static async fundEscrow(escrowId: string, freelancerAddress: string, amountUsdc: number): Promise<FundingResult> {
+    if (!config.arc.executeOnchain) {
+      throw new Error('On-chain settlement is disabled. Set PROOFPAY_ONCHAIN_SETTLEMENT=true only after verifying the configured Arc wallet, contract, and USDC approval.');
+    }
+    if (!ethers.isAddress(freelancerAddress)) throw new Error('Freelancer payout address is invalid.');
+    if (!config.arc.relayerPrivateKey || !config.arc.escrowAddress || !ethers.isAddress(config.arc.escrowAddress)) {
+      throw new Error('Arc funder or escrow contract is not configured.');
+    }
+
+    const wallet = new ethers.Wallet(config.arc.relayerPrivateKey, this.provider);
+    const formattedEscrowId = escrowId.startsWith('0x') && escrowId.length === 66 ? escrowId : ethers.id(escrowId);
+    const amount = ethers.parseUnits(amountUsdc.toString(), 6);
+    const usdc = new ethers.Contract(
+      config.arc.usdcAddress,
+      ['function balanceOf(address) view returns (uint256)', 'function allowance(address,address) view returns (uint256)'],
+      this.provider
+    );
+    const [balance, allowance] = await Promise.all([
+      usdc.balanceOf(wallet.address),
+      usdc.allowance(wallet.address, config.arc.escrowAddress),
+    ]);
+    if (balance < amount) {
+      throw new Error(`Insufficient Arc USDC balance. Available ${ethers.formatUnits(balance, 6)} USDC; required ${amountUsdc} USDC.`);
+    }
+    if (allowance < amount) {
+      throw new Error(`Escrow contract allowance is too low. Approved ${ethers.formatUnits(allowance, 6)} USDC; required ${amountUsdc} USDC.`);
+    }
+
+    const contract = new ethers.Contract(
+      config.arc.escrowAddress,
+      ['function fundEscrow(bytes32 escrowId, address freelancer, uint256 amount) external'],
+      wallet
+    );
+    const tx = await contract.fundEscrow(formattedEscrowId, freelancerAddress, amount);
+    logger.arc(`Arc escrow funding submitted: ${tx.hash}`, { escrowId: formattedEscrowId, amountUsdc, funder: wallet.address });
+    const receipt = await tx.wait();
+    if (!receipt || receipt.status !== 1) throw new Error('Arc funding transaction was not confirmed successfully.');
+    return {
+      txHash: receipt.hash,
+      explorerUrl: `${config.arc.explorerUrl}/tx/${receipt.hash}`,
+      blockNumber: receipt.blockNumber,
+      funderAddress: wallet.address,
       timestamp: new Date().toISOString(),
     };
   }

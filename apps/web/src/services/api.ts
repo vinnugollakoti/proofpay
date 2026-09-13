@@ -103,7 +103,7 @@ export async function acceptJob(id: string) {
 }
 
 export async function fundJob(id: string, txHash?: string) {
-  return request<{ job: any }>(`/api/jobs/${id}/fund`, {
+  return request<{ job: any; funding: { txHash: string; explorerUrl: string } }>(`/api/jobs/${id}/fund`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ txHash }),

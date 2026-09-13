@@ -6,6 +6,7 @@ import { getPrisma } from '../db/prisma.js';
 import { Job } from '../types/index.js';
 import { AuditService } from '../services/audit.service.js';
 import { logger } from '../utils/logger.js';
+import { ArcService } from '../services/arc.service.js';
 
 function mapPrismaJob(j: any): Job {
   return {
@@ -196,21 +197,15 @@ export class JobsController {
 
   static async fundJob(req: Request, res: Response) {
     const { id } = req.params;
-    const { txHash } = req.body;
-    const escrowId = ethers.keccak256(ethers.toUtf8Bytes(`escrow:${id}:${Date.now()}`));
-
     const prisma = getPrisma();
     let job = db.jobs.get(id);
 
     if (prisma) {
       try {
-        const dbJob = await prisma.job.update({
-          where: { id },
-          data: { status: 'FUNDED', escrowId, updatedAt: new Date() },
-        });
-        job = mapPrismaJob(dbJob);
+        const dbJob = await prisma.job.findUnique({ where: { id } });
+        if (dbJob) job = mapPrismaJob(dbJob);
       } catch (err: any) {
-        logger.dbError(`Failed to fund job in Supabase: ${err.message}`);
+        logger.dbError(`Failed to load job for funding from Supabase: ${err.message}`);
       }
     }
 
@@ -221,10 +216,41 @@ export class JobsController {
     if (job.clientId !== req.principal!.userId) return res.status(403).json({ error: 'Only the milestone client can fund escrow.' });
     if (job.status !== 'CREATED' && job.status !== 'ACCEPTED') return res.status(409).json({ error: 'Escrow can only be funded after a milestone is created or accepted.' });
 
+    const escrowId = job.escrowId || ethers.keccak256(ethers.toUtf8Bytes(`proofpay:escrow:${job.id}`));
+    let funding;
+    try {
+      funding = await ArcService.fundEscrow(escrowId, job.freelancerPayoutAddress, job.amountUsdc);
+    } catch (err: any) {
+      logger.arcError(`Escrow funding failed for ${job.id}: ${err.message}`);
+      return res.status(422).json({
+        error: `Escrow was not funded on Arc: ${err.message}`,
+        code: 'ESCROW_FUNDING_FAILED',
+      });
+    }
+
     job.status = 'FUNDED';
     job.escrowId = escrowId;
     job.updatedAt = new Date().toISOString();
     db.jobs.set(job.id, job);
+
+    if (prisma) {
+      try {
+        await prisma.job.update({ where: { id: job.id }, data: { status: 'FUNDED', escrowId, updatedAt: new Date() } });
+        await prisma.transaction.create({
+          data: {
+            jobId: job.id,
+            txHash: funding.txHash,
+            chainId: 5042002,
+            action: 'FUND',
+            status: 'CONFIRMED',
+            blockNumber: BigInt(funding.blockNumber),
+          },
+        });
+      } catch (err: any) {
+        logger.dbError(`Arc funding succeeded but persistence failed for ${job.id}: ${err.message}`);
+        return res.status(500).json({ error: `Arc escrow was funded (${funding.txHash}), but the database update failed. Do not retry funding; reconcile this transaction first.`, code: 'FUNDING_PERSISTENCE_FAILED', txHash: funding.txHash });
+      }
+    }
 
     await AuditService.recordEvent(
       job.id,
@@ -232,13 +258,16 @@ export class JobsController {
       {
         escrowId,
         amountUsdc: job.amountUsdc,
-        txHash: txHash || undefined,
+        txHash: funding.txHash,
+        explorerUrl: funding.explorerUrl,
+        blockNumber: funding.blockNumber,
+        funderAddress: funding.funderAddress,
       },
-      '0xa11ce00000000000000000000000000000000001',
+      funding.funderAddress,
       'CLIENT'
     );
 
-    return res.json({ job });
+    return res.json({ job, funding });
   }
 
   static async submitWork(req: Request, res: Response) {

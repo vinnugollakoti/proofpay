@@ -86,7 +86,7 @@ export class WorldService {
         nullifier: proofPayload.nullifier_hash.slice(0, 16) + '...',
       });
 
-      const response = await fetch(url, {
+      const response: any = await fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

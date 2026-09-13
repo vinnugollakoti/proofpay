@@ -28,14 +28,15 @@ export class PaymentsController {
       logger.paymentError(`Job not found for release intent: "${jobId}"`);
       return res.status(404).json({ error: `Job with ID "${jobId}" not found` });
     }
+    if (job.clientId !== req.principal!.userId) return res.status(403).json({ error: 'Only the milestone client can authorize release.', code: 'FORBIDDEN' });
 
-    if (job.status !== 'APPROVED' && job.status !== 'FUNDED') {
+    if (job.status !== 'APPROVED') {
       logger.paymentError(`Job "${job.title}" is in "${job.status}" state — requires "APPROVED" or "FUNDED" to release`, {
         jobId: job.id,
         currentStatus: job.status,
       });
       return res.status(400).json({
-        error: `Job not in releasable state. Current status is "${job.status}", but milestone must be "APPROVED" or "FUNDED".`,
+        error: `Job not in releasable state. Current status is "${job.status}"; the deliverable must be approved first.`,
         currentStatus: job.status,
       });
     }
@@ -143,6 +144,7 @@ export class PaymentsController {
       logger.paymentError(`Payment intent "${paymentIntentId}" not found in registry`);
       return res.status(404).json({ error: `Payment intent "${paymentIntentId}" not found` });
     }
+    if (intent.clientId !== req.principal!.userId) return res.status(403).json({ error: 'Only the client that created this authorization can execute it.', code: 'FORBIDDEN' });
 
     const job = db.jobs.get(intent.jobId);
     if (!job) {

@@ -83,6 +83,15 @@ You only maintain **one** `.env` file at the root of `proofpay/`:
 cp .env.example .env
 ```
 
+The app starts in a self-contained demo mode by default. It uses seeded client and
+freelancer accounts, records settlement as `PROTOCOL_RECORDED`, and labels the
+simulated World check in the UI. To use real infrastructure, set
+`PROOFPAY_DEMO_MODE=false`, then explicitly enable `PROOFPAY_USE_DATABASE=true`
+and/or `PROOFPAY_ONCHAIN_SETTLEMENT=true` only after configuring and testing those
+services. For Privy, set both `VITE_PRIVY_APP_ID` and the server-only
+`PRIVY_VERIFICATION_KEY`; the API verifies each browser access token before it
+creates a ProofPay session or allows a protected action.
+
 ### 2. Install Dependencies & Generate Prisma Client
 ```bash
 pnpm install

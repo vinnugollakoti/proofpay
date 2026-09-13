@@ -155,7 +155,7 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({
         <div className="bg-white border border-neutral-200 p-6 rounded-3xl shadow-xs">
           <span className="text-xs font-medium text-neutral-500">Total Escrow Volume</span>
           <div className="text-3xl font-bold tracking-tight text-neutral-950 mt-1">${totalVolume.toLocaleString()} USDC</div>
-          <span className="text-[11px] text-neutral-400 mt-1 block">Live records from Supabase</span>
+          <span className="text-[11px] text-neutral-400 mt-1 block">Current workspace records</span>
         </div>
         <div className="bg-white border border-neutral-200 p-6 rounded-3xl shadow-xs">
           <span className="text-xs font-medium text-neutral-500">Privy Policy Spending Cap</span>
@@ -181,7 +181,7 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({
       <div className="bg-white border border-neutral-200 rounded-3xl overflow-hidden shadow-xs">
         <div className="px-8 py-5 border-b border-neutral-200 flex justify-between items-center bg-neutral-50/50">
           <h2 className="text-sm font-bold text-neutral-950">Active Escrow Milestones ({jobs.length})</h2>
-          <span className="text-xs text-neutral-500 font-mono">Live Data from Supabase</span>
+          <span className="text-xs text-neutral-500 font-mono">Current workspace data</span>
         </div>
 
         <div className="divide-y divide-neutral-100">

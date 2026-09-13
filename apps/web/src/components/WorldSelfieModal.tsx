@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Camera, AlertOctagon, CheckCircle2, RefreshCw, Timer, Sparkles, UserCheck, X } from 'lucide-react';
+import { AlertOctagon, CheckCircle2, RefreshCw, Timer, UserCheck } from 'lucide-react';
+import { IDKitRequestWidget, selfieCheckLegacy, type IDKitResult } from '@worldcoin/idkit';
 
 interface WorldSelfieModalProps {
   isOpen: boolean;
@@ -24,6 +25,17 @@ export const WorldSelfieModal: React.FC<WorldSelfieModalProps> = ({
 }) => {
   const [verifying, setVerifying] = useState(false);
   const [timeLeft, setTimeLeft] = useState(60);
+  const [idKitOpen, setIdKitOpen] = useState(false);
+  const worldAppId = import.meta.env.VITE_WORLD_APP_ID;
+  const worldAction = import.meta.env.VITE_WORLD_ACTION || 'release-payment';
+  const demoMode = import.meta.env.VITE_DEMO_MODE !== 'false';
+  const worldRpContext = (() => {
+    try {
+      return JSON.parse(import.meta.env.VITE_WORLD_RP_CONTEXT_JSON || 'null');
+    } catch {
+      return null;
+    }
+  })();
 
   // 60-second TTL Countdown Timer
   useEffect(() => {
@@ -48,7 +60,7 @@ export const WorldSelfieModal: React.FC<WorldSelfieModalProps> = ({
 
   if (!isOpen) return null;
 
-  const handlePass = () => {
+  const completeWithDemoProof = () => {
     setVerifying(true);
     setTimeout(() => {
       setVerifying(false);
@@ -67,6 +79,22 @@ export const WorldSelfieModal: React.FC<WorldSelfieModalProps> = ({
         verification_level: 'selfie',
       });
     }, 1200);
+  };
+
+  const handleWorldSuccess = (result: IDKitResult) => {
+    const response = result.responses[0];
+    if (!response || result.protocol_version !== '3.0' || !('merkle_root' in response)) {
+      onFail('This World response format is not supported by the configured verifier. Use the Selfie Check legacy credential in World Developer Portal.');
+      return;
+    }
+    setIdKitOpen(false);
+    onSuccess({
+      merkle_root: response.merkle_root,
+      nullifier_hash: response.nullifier,
+      proof: response.proof,
+      credential_type: response.identifier,
+      verification_level: response.identifier,
+    });
   };
 
   const handleSimulateFail = () => {
@@ -119,7 +147,7 @@ export const WorldSelfieModal: React.FC<WorldSelfieModalProps> = ({
             <div className="h-24 w-24 rounded-full border-2 border-neutral-300 flex items-center justify-center bg-white shadow-xs">
               <UserCheck className="h-10 w-10 text-neutral-700" />
             </div>
-            <span className="text-xs text-neutral-500 font-medium">Position face inside verification oval</span>
+            <span className="text-xs text-neutral-500 font-medium">Continue in World App to prove human presence</span>
           </div>
 
           {verifying && (
@@ -148,8 +176,8 @@ export const WorldSelfieModal: React.FC<WorldSelfieModalProps> = ({
         {/* Action Buttons */}
         <div className="space-y-2 pt-2">
           <button
-            disabled={verifying}
-            onClick={handlePass}
+            onClick={() => setIdKitOpen(true)}
+            disabled={verifying || !worldAppId || !worldRpContext}
             className="w-full bg-black hover:bg-neutral-800 disabled:bg-neutral-300 text-white font-bold py-3 px-4 rounded-full text-xs transition-all flex items-center justify-center gap-2 shadow-sm"
           >
             {verifying ? (
@@ -160,21 +188,37 @@ export const WorldSelfieModal: React.FC<WorldSelfieModalProps> = ({
             ) : (
               <>
                 <CheckCircle2 className="h-4 w-4" />
-                Complete Selfie Check (Happy Path)
+                Verify with World ID
               </>
             )}
           </button>
 
-          <button
-            disabled={verifying}
-            onClick={handleSimulateFail}
-            className="w-full bg-white hover:bg-neutral-50 border border-neutral-300 hover:border-black text-neutral-800 font-medium py-2.5 px-4 rounded-full text-xs transition-all flex items-center justify-center gap-1.5"
-          >
-            <AlertOctagon className="h-3.5 w-3.5 text-neutral-600" />
-            Simulate Verification Failure (Demo Blocked Path)
-          </button>
+          {(!worldAppId || !worldRpContext) && <p className="text-[11px] text-amber-700 text-center">Set VITE_WORLD_APP_ID and a signed VITE_WORLD_RP_CONTEXT_JSON to enable production verification.</p>}
+          {demoMode && (
+            <>
+              <button disabled={verifying} onClick={completeWithDemoProof} className="w-full bg-white hover:bg-neutral-50 border border-neutral-300 hover:border-black text-neutral-800 font-medium py-2.5 px-4 rounded-full text-xs transition-all flex items-center justify-center gap-1.5">
+                <CheckCircle2 className="h-3.5 w-3.5" /> Complete simulated check
+              </button>
+              <button disabled={verifying} onClick={handleSimulateFail} className="w-full text-neutral-500 text-xs underline">
+                Simulate verification failure
+              </button>
+            </>
+          )}
         </div>
       </div>
+      {worldAppId && worldRpContext && (
+        <IDKitRequestWidget
+          open={idKitOpen}
+          onOpenChange={setIdKitOpen}
+          app_id={worldAppId as `app_${string}`}
+          action={worldAction}
+          rp_context={worldRpContext}
+          allow_legacy_proofs={true}
+          preset={selfieCheckLegacy({ signal: signalHash })}
+          onSuccess={handleWorldSuccess}
+          onError={() => onFail('World ID verification was cancelled or could not be completed.')}
+        />
+      )}
     </div>
   );
 };

@@ -11,6 +11,7 @@
 let _prisma: any = null;
 
 export function getPrisma() {
+  if (process.env.PROOFPAY_USE_DATABASE !== 'true') return null;
   if (!_prisma) {
     try {
       // Dynamic import avoids crash at startup when @prisma/client isn't generated

@@ -19,6 +19,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   onSwitchRole,
 }) => {
   const { login: privyLogin, authenticated: privyAuthenticated } = usePrivy();
+  const privyAppId = import.meta.env.VITE_PRIVY_APP_ID || 'not configured';
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -125,7 +126,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             <span>Connect with Privy (Embedded Wallet / Social)</span>
           </button>
           <div className="flex justify-between items-center px-2 text-[10px] text-neutral-500">
-            <span>Privy App ID: <code className="font-mono text-neutral-700">cmtn2zia...yhx0</code></span>
+            <span>Privy App ID: <code className="font-mono text-neutral-700">{privyAppId === 'not configured' ? privyAppId : `${privyAppId.slice(0, 10)}…`}</code></span>
             <a
               href="https://dashboard.privy.io"
               target="_blank"
@@ -147,7 +148,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         {/* Demo Credentials Quick Fill Banner */}
         <div className="bg-neutral-50 border border-neutral-200 rounded-2xl p-3.5 space-y-2">
           <div className="flex justify-between items-center text-[11px]">
-            <span className="font-semibold text-neutral-700">Supabase Injected Demo Credentials:</span>
+            <span className="font-semibold text-neutral-700">Local demo credentials:</span>
             <button
               type="button"
               onClick={handleFillDemoCreds}
@@ -207,7 +208,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             disabled={loading}
             className="w-full py-3 bg-black hover:bg-neutral-800 disabled:bg-neutral-300 text-white rounded-full text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-sm"
           >
-            {loading ? 'Authenticating with Supabase...' : `Enter ${isClient ? 'Client' : 'Freelancer'} Workspace`}
+            {loading ? 'Signing in...' : `Enter ${isClient ? 'Client' : 'Freelancer'} Workspace`}
             <ArrowRight className="h-3.5 w-3.5" />
           </button>
         </form>

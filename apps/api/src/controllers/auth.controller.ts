@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { db } from '../db/store.js';
 import { getPrisma } from '../db/prisma.js';
 import { logger } from '../utils/logger.js';
+import { publicUser } from '../services/identity.service.js';
 
 export class AuthController {
   /**
@@ -91,6 +92,36 @@ export class AuthController {
           }
         : undefined,
     });
+  }
+
+  /** Maps a server-verified Privy DID to a local ProofPay profile. */
+  static async syncPrivySession(req: Request, res: Response) {
+    const principal = req.principal!;
+    const { email, walletAddress, name, role } = req.body;
+    let user = db.users.get(principal.userId);
+    if (!user && principal.privyUserId) {
+      user = Array.from(db.users.values()).find((candidate) => candidate.privyUserId === principal.privyUserId);
+    }
+    if (!user) {
+      const requestedRole = role === 'FREELANCER' ? 'FREELANCER' : 'CLIENT';
+      const address = typeof walletAddress === 'string' && /^0x[a-fA-F0-9]{40}$/.test(walletAddress)
+        ? walletAddress
+        : '0x0000000000000000000000000000000000000001';
+      const id = `user-${principal.privyUserId!.replace(/[^a-zA-Z0-9]/g, '').slice(-16)}`;
+      user = {
+        id,
+        privyUserId: principal.privyUserId!,
+        walletAddress: address,
+        email: typeof email === 'string' ? email.toLowerCase() : undefined,
+        name: typeof name === 'string' ? name.slice(0, 80) : undefined,
+        role: requestedRole,
+        organizationId: requestedRole === 'CLIENT' ? 'org-acme-design' : undefined,
+        createdAt: new Date().toISOString(),
+      };
+      db.users.set(id, user);
+    }
+    const organization = user.organizationId ? db.organizations.get(user.organizationId) : undefined;
+    return res.json({ success: true, user: publicUser(user), organization, authMode: 'privy' });
   }
 
   static async getSession(req: Request, res: Response) {

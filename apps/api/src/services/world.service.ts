@@ -29,7 +29,7 @@ export class WorldService {
     signalHash: string,
     paymentIntentId: string
   ): Promise<{ success: boolean; error?: string; verificationLevel?: string }> {
-    // 1. Anti-Replay Check: Ensure nullifier hasn't been used before
+
     const existingNullifier = Array.from(db.verifications.values()).find(
       (v) => v.nullifierHash === proofPayload.nullifier_hash && v.status === 'VALID'
     );
@@ -50,6 +50,13 @@ export class WorldService {
     if (proofPayload.proof === 'FAIL_VERIFICATION_TEST') {
       logger.worldError(`Simulated verification rejection triggered — biometric liveness rejected`);
       return { success: false, error: 'Selfie Check failed: Biometric liveness check rejected.' };
+    }
+
+    // Local demo mode is explicit and never used in production configuration.
+    // It keeps the demo independent of a live World Portal round-trip.
+    if (config.demoMode || config.world.mockVerification) {
+      logger.world('Mock verification enabled; recording local demo proof.');
+      return { success: true, verificationLevel: proofPayload.credential_type || 'selfie' };
     }
 
     // 3. Real World Verification API call (v4 endpoint with rp_id)
@@ -101,21 +108,8 @@ export class WorldService {
         };
       }
 
-      // If developer portal returned invalid_merkle_root (expected for non-orbed staging proofs during hackathon testing)
-      if (
-        data.results?.[0]?.code === 'invalid_merkle_root' ||
-        config.world.mockVerification
-      ) {
-        logger.world(
-          `World developer portal responded with staging tree check (${data.results?.[0]?.detail || 'unverified merkle root'}). Accepting biometric liveness for authorized hackathon demo.`,
-          { targetId, action: config.world.action }
-        );
-        return {
-          success: true,
-          verificationLevel: proofPayload.credential_type || 'selfie',
-        };
-      }
-
+      // A local demo can opt in to mock verification. Never turn a failed production
+      // verification (including an invalid Merkle root) into a successful payment.
       const errorDetail =
         data.results?.[0]?.detail ||
         data.detail ||

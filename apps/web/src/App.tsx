@@ -8,6 +8,8 @@ import {
   approveWork,
   createReleaseIntent,
   verifyAndRelease,
+  configureApiAuth,
+  syncPrivySession,
 } from './services/api';
 import { Navbar } from './components/Navbar';
 import { LandingPage } from './pages/LandingPage';
@@ -22,7 +24,7 @@ import { AlertCircle, CheckCircle2 } from 'lucide-react';
 import { usePrivy } from '@privy-io/react-auth';
 
 export function App() {
-  const { user: privyUser, authenticated: privyAuthenticated, logout: privyLogout } = usePrivy();
+  const { user: privyUser, authenticated: privyAuthenticated, logout: privyLogout, getAccessToken } = usePrivy();
   const [view, setView] = useState<'LANDING' | 'WORKSPACE'>('LANDING');
   const [role, setRole] = useState<'CLIENT' | 'FREELANCER'>('CLIENT');
   const [currentUser, setCurrentUser] = useState<any | null>(() => {
@@ -71,7 +73,7 @@ export function App() {
       const data = await fetchJobs();
       setJobs(data.jobs || []);
     } catch (err: any) {
-      console.error('Failed to load jobs from Supabase:', err);
+      console.error('Failed to load milestones:', err);
     }
   };
 
@@ -79,12 +81,20 @@ export function App() {
     loadJobs();
     if (currentUser) {
       setRole(currentUser.role);
+      if (!privyAuthenticated && ['user-client-alice', 'user-freelancer-bob'].includes(currentUser.id)) {
+        localStorage.setItem('proofpay_demo_user_id', currentUser.id);
+      }
     }
-  }, []);
+  }, [privyAuthenticated]);
+
+  useEffect(() => {
+    configureApiAuth(async () => (privyAuthenticated ? await getAccessToken() : null));
+    return () => configureApiAuth();
+  }, [getAccessToken, privyAuthenticated]);
 
   // Synchronize Privy authenticated user with ProofPay workspace
   useEffect(() => {
-    if (privyAuthenticated && privyUser && !currentUser) {
+    if (privyAuthenticated && privyUser) {
       const walletAddress =
         privyUser.wallet?.address ||
         (privyUser.linkedAccounts?.find((a: any) => a.type === 'wallet') as any)?.address ||
@@ -95,32 +105,20 @@ export function App() {
         (privyUser.google?.email as string) ||
         `${privyUser.id.slice(0, 10)}@privy.id`;
 
-      const userObj = {
-        id: privyUser.id,
-        privyUserId: privyUser.id,
-        email,
-        walletAddress,
-        role: role || 'CLIENT',
-        organizationId: 'org-acme-design',
-        name: email.split('@')[0],
-      };
-
-      const orgObj = {
-        id: 'org-acme-design',
-        name: 'ACME Design Studio',
-        privyOrgId: 'privy-org-acme',
-        walletAddress: '0x37Da1f17986e4DC6d4E8D86713791698F07c8099',
-        maxReleaseLimitUsdc: 2500,
-      };
-
-      setCurrentUser(userObj);
-      setCurrentOrg(orgObj);
-      localStorage.setItem('proofpay_user', JSON.stringify(userObj));
-      localStorage.setItem('proofpay_org', JSON.stringify(orgObj));
-      setView('WORKSPACE');
-      loadJobs();
+      syncPrivySession({ email, walletAddress, name: email.split('@')[0], role })
+        .then(({ user, organization }) => {
+          localStorage.removeItem('proofpay_demo_user_id');
+          setCurrentUser(user);
+          setCurrentOrg(organization || null);
+          localStorage.setItem('proofpay_user', JSON.stringify(user));
+          if (organization) localStorage.setItem('proofpay_org', JSON.stringify(organization));
+          setRole(user.role);
+          setView('WORKSPACE');
+          loadJobs();
+        })
+        .catch((error) => setErrorAlert(error.message || 'Privy session could not be verified by ProofPay.'));
     }
-  }, [privyAuthenticated, privyUser]);
+  }, [privyAuthenticated, privyUser, role]);
 
   const handleOpenLogin = (targetRole: 'CLIENT' | 'FREELANCER') => {
     setAuthModalTargetRole(targetRole);
@@ -135,6 +133,7 @@ export function App() {
       localStorage.setItem('proofpay_org', JSON.stringify(org));
     }
     setRole(user.role);
+    localStorage.setItem('proofpay_demo_user_id', user.id);
     setView('WORKSPACE');
     loadJobs();
   };
@@ -151,6 +150,7 @@ export function App() {
     setCurrentOrg(null);
     localStorage.removeItem('proofpay_user');
     localStorage.removeItem('proofpay_org');
+    localStorage.removeItem('proofpay_demo_user_id');
     setView('LANDING');
     setSelectedJob(null);
   };

@@ -36,7 +36,7 @@ export class ArcService {
       config.arc.escrowAddress.length === 42 &&
       !config.arc.escrowAddress.startsWith('0x0000000000000000000000000000000000000000');
 
-    if (hasValidKey && hasValidContract) {
+    if (config.arc.executeOnchain && hasValidKey && hasValidContract) {
       try {
         const wallet = new ethers.Wallet(config.arc.relayerPrivateKey, this.provider);
         const abi = [

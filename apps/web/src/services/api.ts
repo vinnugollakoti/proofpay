@@ -1,4 +1,9 @@
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+let accessTokenProvider: (() => Promise<string | null>) | undefined;
+
+export function configureApiAuth(provider?: () => Promise<string | null>) {
+  accessTokenProvider = provider;
+}
 
 async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const url = `${API_URL}${endpoint}`;
@@ -11,7 +16,12 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
   );
 
   try {
-    const res = await fetch(url, options);
+    const token = accessTokenProvider ? await accessTokenProvider() : null;
+    const demoUser = localStorage.getItem('proofpay_demo_user_id');
+    const headers = new Headers(options.headers);
+    if (token) headers.set('Authorization', `Bearer ${token}`);
+    else if (demoUser) headers.set('x-proofpay-demo-user', demoUser);
+    const res = await fetch(url, { ...options, headers });
     const data = await res.json().catch(() => ({}));
 
     if (!res.ok) {
@@ -50,6 +60,14 @@ export async function loginUser(credentials: { email: string; password: string; 
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(credentials),
+  });
+}
+
+export async function syncPrivySession(profile: { email?: string; walletAddress?: string; name?: string; role: string }) {
+  return request<{ success: boolean; user: any; organization?: any; authMode: 'privy' }>('/api/auth/privy/session', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(profile),
   });
 }
 

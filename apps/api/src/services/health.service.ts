@@ -40,7 +40,7 @@ export async function checkSystemHealth(): Promise<Record<string, ServiceStatus>
 
   // 2. SUPABASE / PRISMA — Live SQL query execution on PostgreSQL
   const prisma = getPrisma();
-  if (prisma && config.databaseUrl && !config.databaseUrl.includes('your_password')) {
+  if (config.databaseEnabled && prisma && config.databaseUrl && !config.databaseUrl.includes('your_password')) {
     try {
       const dbHost = new URL(config.databaseUrl).host;
       await prisma.$queryRaw`SELECT 1`;
@@ -60,7 +60,7 @@ export async function checkSystemHealth(): Promise<Record<string, ServiceStatus>
     results.database = {
       name: 'Supabase / Prisma',
       status: 'not_configured',
-      message: 'DATABASE_URL not set in .env (Using in-memory fallback)',
+      message: config.databaseEnabled ? 'DATABASE_URL not set in .env (using in-memory demo)' : 'In-memory demo mode (set PROOFPAY_USE_DATABASE=true for Supabase)',
     };
   }
 

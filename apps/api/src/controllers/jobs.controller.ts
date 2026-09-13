@@ -104,8 +104,9 @@ export class JobsController {
       }
     }
 
-    const clientId = clientUser?.id || 'user-client-alice';
-    const organizationId = org?.id || 'org-acme-design';
+    const clientId = req.principal!.userId;
+    const authenticatedClient = db.users.get(clientId);
+    const organizationId = authenticatedClient?.organizationId || org?.id || 'org-acme-design';
 
     const jobId = `job-${uuidv4().slice(0, 8)}`;
     const newJob: Job = {
@@ -147,7 +148,7 @@ export class JobsController {
       newJob.id,
       'JOB_CREATED',
       { title, amountUsdc: Number(amountUsdc), freelancerPayoutAddress },
-      clientUser?.walletAddress || '0xa11ce00000000000000000000000000000000001',
+      authenticatedClient?.walletAddress || clientUser?.walletAddress || '0xa11ce00000000000000000000000000000000001',
       'CLIENT'
     );
 
@@ -175,8 +176,10 @@ export class JobsController {
       logger.paymentError(`POST /api/jobs/${id}/accept — Job not found`);
       return res.status(404).json({ error: 'Job not found' });
     }
+    if (job.status !== 'CREATED') return res.status(409).json({ error: 'Only newly created milestones can be accepted.' });
 
     job.status = 'ACCEPTED';
+    job.freelancerId = req.principal!.userId;
     job.updatedAt = new Date().toISOString();
     db.jobs.set(job.id, job);
 
@@ -215,6 +218,8 @@ export class JobsController {
       logger.paymentError(`POST /api/jobs/${id}/fund — Job not found`);
       return res.status(404).json({ error: 'Job not found' });
     }
+    if (job.clientId !== req.principal!.userId) return res.status(403).json({ error: 'Only the milestone client can fund escrow.' });
+    if (job.status !== 'CREATED' && job.status !== 'ACCEPTED') return res.status(409).json({ error: 'Escrow can only be funded after a milestone is created or accepted.' });
 
     job.status = 'FUNDED';
     job.escrowId = escrowId;
@@ -260,6 +265,8 @@ export class JobsController {
       logger.paymentError(`POST /api/jobs/${id}/submit-work — Job not found`);
       return res.status(404).json({ error: 'Job not found' });
     }
+    if (job.freelancerId && job.freelancerId !== req.principal!.userId) return res.status(403).json({ error: 'Only the assigned freelancer can submit work.' });
+    if (job.status !== 'FUNDED' && job.status !== 'ACCEPTED') return res.status(409).json({ error: 'Work can only be submitted for an accepted or funded milestone.' });
 
     job.status = 'WORK_SUBMITTED';
     job.submissionUrl = url;
@@ -298,6 +305,8 @@ export class JobsController {
       logger.paymentError(`POST /api/jobs/${id}/approve — Job not found`);
       return res.status(404).json({ error: 'Job not found' });
     }
+    if (job.clientId !== req.principal!.userId) return res.status(403).json({ error: 'Only the milestone client can approve work.' });
+    if (job.status !== 'WORK_SUBMITTED') return res.status(409).json({ error: 'Only submitted work can be approved.' });
 
     job.status = 'APPROVED';
     job.updatedAt = new Date().toISOString();

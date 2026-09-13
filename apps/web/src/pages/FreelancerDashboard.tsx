@@ -70,7 +70,7 @@ export const FreelancerDashboard: React.FC<FreelancerDashboardProps> = ({
       <div className="bg-white border border-neutral-200 rounded-3xl overflow-hidden shadow-xs">
         <div className="px-8 py-5 border-b border-neutral-200 flex justify-between items-center bg-neutral-50/50">
           <h2 className="text-sm font-bold text-neutral-950">Active Milestones ({jobs.length})</h2>
-          <span className="text-xs text-neutral-500 font-mono">Live Data from Supabase</span>
+          <span className="text-xs text-neutral-500 font-mono">Current workspace data</span>
         </div>
 
         <div className="divide-y divide-neutral-100">

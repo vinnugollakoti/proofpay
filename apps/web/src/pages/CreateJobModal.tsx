@@ -131,7 +131,7 @@ export const CreateJobModal: React.FC<CreateJobModalProps> = ({
               disabled={loading}
               className="px-6 py-2.5 bg-black hover:bg-neutral-800 disabled:bg-neutral-300 text-white rounded-full text-xs font-bold transition-all shadow-sm"
             >
-              {loading ? 'Creating in Supabase...' : 'Create Escrow Job'}
+              {loading ? 'Creating milestone...' : 'Create Escrow Job'}
             </button>
           </div>
         </form>

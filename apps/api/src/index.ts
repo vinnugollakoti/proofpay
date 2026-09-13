@@ -10,7 +10,7 @@ import { logger } from './utils/logger.js';
 
 const app = express();
 
-app.use(cors({ origin: '*' }));
+app.use(cors({ origin: config.corsOrigin.split(',').map((origin) => origin.trim()) }));
 app.use(express.json());
 
 // Request & Response Logging Middleware for all APIs

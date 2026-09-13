@@ -10,10 +10,14 @@ export const config = {
   port: parseInt(process.env.PORT || '4000', 10),
   nodeEnv: process.env.NODE_ENV || 'development',
   corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:5173',
+  demoMode: process.env.PROOFPAY_DEMO_MODE !== 'false',
 
   // Database (Supabase PostgreSQL / Prisma)
   databaseUrl: process.env.DATABASE_URL || '',
   directUrl: process.env.DIRECT_URL || process.env.DATABASE_URL || '',
+  // The demo is intentionally self-contained. Opt into a live Supabase database
+  // only after its connection string has been verified.
+  databaseEnabled: process.env.PROOFPAY_USE_DATABASE === 'true',
 
   // Supabase Client SDK
   supabase: {
@@ -49,5 +53,6 @@ export const config = {
     usdcAddress: process.env.VITE_ARC_USDC_CONTRACT_ADDRESS || process.env.ARC_USDC_CONTRACT_ADDRESS || '0x3600000000000000000000000000000000000000',
     escrowAddress: process.env.VITE_ARC_ESCROW_CONTRACT_ADDRESS || process.env.ARC_ESCROW_CONTRACT_ADDRESS || '0x0000000000000000000000000000000000000000',
     relayerPrivateKey: process.env.ARC_RELAYER_PRIVATE_KEY || '',
+    executeOnchain: process.env.PROOFPAY_ONCHAIN_SETTLEMENT === 'true',
   },
 };

@@ -4,7 +4,10 @@ export interface User {
   id: string;
   privyUserId: string;
   walletAddress: string;
+  name?: string;
   email?: string;
+  /** Present only on seeded local demo records; never returned by the API. */
+  password?: string;
   role: UserRole;
   organizationId?: string;
   createdAt: string;
